@@ -27,6 +27,8 @@ public class CloudSightHybridClient {
 
     private static final int CONNECT_TIMEOUT_MS = 8_000;
     private static final int READ_TIMEOUT_MS = 60_000;
+    private static final long COLLECTOR_DISPATCH_DELAY_MS = 2_500L;
+    private static final long COLLECTOR_PROVIDER_DELAY_MS = 4_000L;
 
     @Value("${cloudsight.api.base-url}")
     private String baseUrl;
@@ -155,8 +157,11 @@ public class CloudSightHybridClient {
         List<Map<String, Object>> collectorResults = new ArrayList<>();
 
         collectorResults.add(postCollectorPayloads("AWS", awsCollectorUrl, awsCollectorPayloads()));
+        sleep(COLLECTOR_PROVIDER_DELAY_MS);
         collectorResults.add(postCollectorPayloads("GCP", gcpCollectorUrl, gcpCollectorPayloads()));
+        sleep(COLLECTOR_PROVIDER_DELAY_MS);
         collectorResults.add(postCollectorPayloads("AZURE", azureCollectorUrl, azureCollectorPayloads()));
+        sleep(COLLECTOR_PROVIDER_DELAY_MS);
         collectorResults.add(postCollectorPayloads("OPENAI", openAiCollectorUrl, List.of(openAiCollectorPayload())));
 
         List<Map<String, Object>> readback = session == null
@@ -304,6 +309,7 @@ public class CloudSightHybridClient {
             if (!"SUCCESS".equals(result.get("status"))) {
                 anyError = true;
             }
+            sleep(COLLECTOR_DISPATCH_DELAY_MS);
         }
         return Map.of(
                 "provider", provider,
