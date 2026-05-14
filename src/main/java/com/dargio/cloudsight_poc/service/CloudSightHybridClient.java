@@ -184,12 +184,27 @@ public class CloudSightHybridClient {
                 "password", workspacePassword
         ), headers);
 
-        ResponseEntity<Map> response;
-        try {
-            response = restTemplate.exchange(loginUrl, HttpMethod.POST, entity, Map.class);
-        } catch (RestClientException error) {
-            record("hybrid", "POST", loginUrl, Map.of("Content-Type", "application/json"), Map.of("email", "REDACTED", "password", "REDACTED"), 0, Map.of("error", error.getMessage()));
-            throw error;
+        ResponseEntity<Map> response = null;
+        RestClientException lastError = null;
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            try {
+                response = restTemplate.exchange(loginUrl, HttpMethod.POST, entity, Map.class);
+                break;
+            } catch (RestClientException error) {
+                lastError = error;
+                record("hybrid", "POST", loginUrl, Map.of("Content-Type", "application/json"), Map.of("email", "REDACTED", "password", "REDACTED"), 0, Map.of(
+                        "error", error.getMessage(),
+                        "attempt", attempt
+                ));
+                if (!isRetryable(error) || attempt == 4) {
+                    throw error;
+                }
+                sleep(attempt * 2500L);
+            }
+        }
+
+        if (response == null) {
+            throw lastError == null ? new IllegalStateException("Authentication did not return a response") : lastError;
         }
         Map<String, Object> body = response.getBody();
         String token = body == null ? "" : String.valueOf(body.get("token"));
@@ -547,6 +562,24 @@ public class CloudSightHybridClient {
             return "****";
         }
         return value.substring(0, 4) + "..." + value.substring(value.length() - 4);
+    }
+
+    private boolean isRetryable(RestClientException error) {
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toUpperCase(Locale.ROOT);
+        return normalized.contains("429") || normalized.contains("TOO MANY REQUESTS") || normalized.contains("TIMED OUT");
+    }
+
+    private void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting to retry", interruptedException);
+        }
     }
 
     private static ServiceProfile profile(String key, String service, String inputEndpoint, String outputEndpoint, long inputUnits, long outputUnits) {
