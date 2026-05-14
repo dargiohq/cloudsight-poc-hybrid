@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudSight Hybrid POC Console</title>
+  <link rel="stylesheet" href="/console.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Dargio CloudSight POC</div>
+        <h1>Collector-first multi-cloud demo console</h1>
+        <p class="hero-text">
+          Run provider-native scenarios through live collectors, verify the matching CloudSight entry,
+          and show clients how AWS, GCP, Azure, and OpenAI land in one cost-operations workspace.
+        </p>
+        <div class="hero-actions">
+          <button id="runRealtime" class="btn btn-primary">Run Full Realtime Flow</button>
+          <a class="btn btn-secondary" href="https://dargio-cloudsight-ui.onrender.com/" target="_blank" rel="noreferrer">Open CloudSight</a>
+        </div>
+      </div>
+      <div class="hero-panel" id="heroPanel">
+        <div class="panel-label">Live readiness</div>
+        <div class="status-grid" id="heroStats"></div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel panel-large">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Overview</div>
+            <h2>What this POC proves</h2>
+          </div>
+          <button id="refreshOverview" class="btn btn-ghost">Refresh</button>
+        </div>
+        <div class="overview-grid" id="overviewGrid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Coverage</div>
+            <h2>Modeled providers and families</h2>
+          </div>
+        </div>
+        <div id="collectorGrid" class="collector-grid"></div>
+      </section>
+
+      <section class="panel panel-large">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Scenarios</div>
+            <h2>Manual send and verify</h2>
+            <p class="muted">Each scenario sends a safe provider-native signal through a live collector, then checks CloudSight for the matching endpoint.</p>
+          </div>
+        </div>
+        <div id="scenarioGroups" class="scenario-groups"></div>
+      </section>
+
+      <section class="panel panel-half">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Latest run</div>
+            <h2>Dispatch and verification output</h2>
+          </div>
+        </div>
+        <pre id="resultPanel" class="result-panel">Select a scenario or run the full realtime flow.</pre>
+      </section>
+
+      <section class="panel panel-half">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Audit</div>
+            <h2>Recent API and collector trail</h2>
+          </div>
+          <button id="refreshAudit" class="btn btn-ghost">Reload</button>
+        </div>
+        <div id="auditPanel" class="audit-panel"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/console.js" defer></script>
+</body>
+</html>

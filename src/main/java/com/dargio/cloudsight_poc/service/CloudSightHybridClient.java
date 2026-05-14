@@ -97,7 +97,82 @@ public class CloudSightHybridClient {
                         "Use generic provider identifiers and secret references in connections.",
                         "Collectors send only safe provider telemetry, not end-user content or prompts.",
                         "Send only normalized service, endpoint, unit, and timestamp data to usage ingestion."
+                ),
+                "executionModes", List.of(
+                        "collector-replay: premium demo mode using provider-native non-PII signals through live collectors",
+                        "direct-ingestion: optional fallback path using /api/usage",
+                        "live-provider-calls: only possible when real cloud credentials, resources, and network access are explicitly configured"
                 )
+        );
+    }
+
+    public Map<String, Object> overview() {
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("application", "cloudsight-poc-hybrid");
+        overview.put("mode", "hybrid-premium-console");
+        overview.put("cloudSightBaseUrl", baseUrl);
+        overview.put("cloudSightWorkspace", workspaceEmail);
+        overview.put("collectors", List.of(
+                collectorInfo("AWS", awsCollectorUrl, List.of("S3", "Lambda", "EC2 + EBS", "RDS", "API Gateway", "CloudFront", "DynamoDB", "SQS + SNS")),
+                collectorInfo("GCP", gcpCollectorUrl, List.of("Cloud Storage", "Gemini", "Vision", "Cloud Run", "GKE runtime", "BigQuery", "Pub/Sub")),
+                collectorInfo("AZURE", azureCollectorUrl, List.of("Blob Storage", "VM", "Functions", "Azure OpenAI", "Azure SQL", "Cosmos DB")),
+                collectorInfo("OPENAI", openAiCollectorUrl, List.of("gpt-4", "gpt-4o-mini", "gpt-4.1", "o3", "text-embedding-3-large"))
+        ));
+        overview.put("coverage", Map.of(
+                "modeledScenarioCount", scenarios().size(),
+                "providerCount", 4,
+                "realCloudCallSupport", "Optional and credential-dependent. This console proves the collector architecture with safe provider-native signals.",
+                "recommendedClientStory", "Deploy collectors first, then add optional live provider credentials and billing connections."
+        ));
+
+        try {
+            Session session = login();
+            overview.put("cloudSight", Map.of(
+                    "auth", "CONNECTED",
+                    "connections", getJson(baseUrl + "/api/connections", session.token()),
+                    "dashboardOverview", getJson(baseUrl + "/api/dashboard/overview?days=30", session.token()),
+                    "usageSummary", getJson(baseUrl + "/api/usage/summary?days=30", session.token()),
+                    "reportStatement", getJson(baseUrl + "/api/reports/statement?days=30", session.token())
+            ));
+        } catch (RestClientException error) {
+            overview.put("cloudSight", Map.of(
+                    "auth", "UNAVAILABLE",
+                    "message", error.getMessage()
+            ));
+        }
+
+        return overview;
+    }
+
+    public List<Map<String, Object>> scenarios() {
+        return scenarioDefinitions().stream()
+                .map(this::scenarioView)
+                .toList();
+    }
+
+    public Map<String, Object> runScenario(String scenarioId, boolean verify) {
+        DemoScenario scenario = scenarioDefinitions().stream()
+                .filter(candidate -> candidate.id().equalsIgnoreCase(scenarioId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unknown scenario: " + scenarioId));
+
+        Session session = login();
+        ensureConnections(session.token());
+
+        Map<String, Object> dispatch = postSingleCollectorPayload(
+                scenario.provider(),
+                scenario.collectorUrl(),
+                scenario.payload()
+        );
+
+        Map<String, Object> verification = verify
+                ? verifyScenario(session.token(), scenario)
+                : Map.of("status", "SKIPPED");
+
+        return Map.of(
+                "scenario", scenarioView(scenario),
+                "dispatch", dispatch,
+                "verification", verification
         );
     }
 
@@ -526,6 +601,194 @@ public class CloudSightHybridClient {
         auditTrailService.record(event);
     }
 
+    private Map<String, Object> collectorInfo(String provider, String collectorUrl, List<String> families) {
+        return Map.of(
+                "provider", provider,
+                "collectorUrl", collectorUrl,
+                "serviceFamilies", families,
+                "executionMode", "collector-replay",
+                "liveProviderCalls", "Requires explicit cloud credentials and real cloud resources"
+        );
+    }
+
+    private Map<String, Object> scenarioView(DemoScenario scenario) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", scenario.id());
+        view.put("provider", scenario.provider());
+        view.put("title", scenario.title());
+        view.put("serviceFamily", scenario.serviceFamily());
+        view.put("primaryEndpoint", scenario.primaryEndpoint());
+        view.put("secondaryEndpoint", scenario.secondaryEndpoint());
+        view.put("collectorUrl", scenario.collectorUrl());
+        view.put("signalType", scenario.signalType());
+        view.put("executionMode", scenario.executionMode());
+        view.put("realCloudReady", scenario.realCloudReady());
+        view.put("realCloudNote", scenario.realCloudNote());
+        return view;
+    }
+
+    private Map<String, Object> verifyScenario(String token, DemoScenario scenario) {
+        Map<String, Object> logs = getJson(
+                baseUrl + "/api/usage/logs?page=0&size=5&sort=timestamp,desc&search=" + scenario.primaryEndpoint(),
+                token
+        );
+        Map<String, Object> summary = getJson(
+                baseUrl + "/api/usage/summary?days=30&search=" + scenario.primaryEndpoint(),
+                token
+        );
+        Object latest = null;
+        Object content = logs.get("content");
+        if (content instanceof List<?> list && !list.isEmpty()) {
+            latest = list.get(0);
+        }
+        return Map.of(
+                "status", latest == null ? "NOT_FOUND" : "SUCCESS",
+                "search", scenario.primaryEndpoint(),
+                "summary", summary,
+                "latestLog", latest == null ? Map.of() : latest
+        );
+    }
+
+    private List<DemoScenario> scenarioDefinitions() {
+        Instant now = Instant.now();
+        return List.of(
+                new DemoScenario("aws-s3", "AWS", "S3 object created", "S3", "s3-put", "s3-get", awsCollectorUrl, awsS3Payload(now), "S3 event", "collector-replay", false, "Uses a safe S3-style event payload through the live AWS collector."),
+                new DemoScenario("aws-lambda", "AWS", "Lambda execution summary", "Lambda", "lambda-request", "lambda-duration-gb-second", awsCollectorUrl, awsLambdaPayload(now), "Metric summary", "collector-replay", false, "Uses a Lambda runtime summary through the live AWS collector."),
+                new DemoScenario("aws-ec2-ebs", "AWS", "EC2 and EBS usage", "EC2 + EBS", "ec2-core-hour", "ebs-gp3-gb-month", awsCollectorUrl, awsEc2Payload(now), "Metric summary", "collector-replay", false, "Uses a compute and storage summary through the live AWS collector."),
+                new DemoScenario("aws-rds", "AWS", "RDS instance hours", "RDS", "rds-db-instance-hour", "rds-db-instance-hour", awsCollectorUrl, awsRdsPayload(now), "Metric summary", "collector-replay", false, "Uses an RDS summary through the live AWS collector."),
+                new DemoScenario("aws-api-gateway", "AWS", "API Gateway requests", "API Gateway", "api-gateway-request", "cloudfront-egress-gb", awsCollectorUrl, awsApiGatewayPayload(now), "Metric summary", "collector-replay", false, "Uses an API Gateway traffic summary through the live AWS collector."),
+                new DemoScenario("aws-cloudfront", "AWS", "CloudFront traffic", "CloudFront", "cloudfront-request", "cloudfront-egress-gb", awsCollectorUrl, awsCloudFrontPayload(now), "Metric summary", "collector-replay", false, "Uses a CloudFront traffic summary through the live AWS collector."),
+                new DemoScenario("aws-dynamodb", "AWS", "DynamoDB request units", "DynamoDB", "dynamodb-read-request-unit", "dynamodb-write-request-unit", awsCollectorUrl, awsDynamoPayload(now), "Metric summary", "collector-replay", false, "Uses DynamoDB unit summaries through the live AWS collector."),
+                new DemoScenario("aws-queueing", "AWS", "SQS and SNS queueing", "SQS + SNS", "sqs-request", "sns-publish-request", awsCollectorUrl, awsQueuePayload(now), "Metric summary", "collector-replay", false, "Uses queueing summaries through the live AWS collector."),
+
+                new DemoScenario("gcp-storage", "GCP", "Cloud Storage write", "Cloud Storage", "cloud-storage-class-a", "cloud-storage-class-b", gcpCollectorUrl, gcpStoragePayload(now), "Audit log", "collector-replay", false, "Uses a Cloud Storage audit-style payload through the live GCP collector."),
+                new DemoScenario("gcp-gemini", "GCP", "Gemini model usage", "Gemini", "gemini-input", "gemini-output", gcpCollectorUrl, gcpGeminiPayload(now), "Metric summary", "collector-replay", false, "Uses Gemini token summaries through the live GCP collector."),
+                new DemoScenario("gcp-vision", "GCP", "Vision operations", "Vision", "vision-object-detection-minute", "vision-warehouse-search-request", gcpCollectorUrl, gcpVisionPayload(now), "Metric summary", "collector-replay", false, "Uses Vision service summaries through the live GCP collector."),
+                new DemoScenario("gcp-cloud-run", "GCP", "Cloud Run traffic", "Cloud Run", "cloud-run-request", "cloud-run-vcpu-second", gcpCollectorUrl, gcpCloudRunPayload(now), "Metric summary", "collector-replay", false, "Uses Cloud Run summaries through the live GCP collector."),
+                new DemoScenario("gcp-gke", "GCP", "GKE runtime", "GKE runtime", "cloud-run-memory-gib-second", "gke-cluster-hour", gcpCollectorUrl, gcpGkePayload(now), "Metric summary", "collector-replay", false, "Uses GKE runtime summaries through the live GCP collector."),
+                new DemoScenario("gcp-bigquery", "GCP", "BigQuery jobs", "BigQuery", "bigquery-query-tb", "cloud-storage-class-a", gcpCollectorUrl, gcpBigQueryPayload(now), "Job summary", "collector-replay", false, "Uses BigQuery job summaries through the live GCP collector."),
+                new DemoScenario("gcp-pubsub", "GCP", "Pub/Sub traffic", "Pub/Sub", "pubsub-message-operation", "cloud-storage-class-b", gcpCollectorUrl, gcpPubSubPayload(now), "Metric summary", "collector-replay", false, "Uses Pub/Sub summaries through the live GCP collector."),
+
+                new DemoScenario("azure-blob", "AZURE", "Blob created", "Blob Storage", "blob-write", "blob-read", azureCollectorUrl, azureBlobPayload(now), "Event Grid event", "collector-replay", false, "Uses an Event Grid-style blob event through the live Azure collector."),
+                new DemoScenario("azure-vm", "AZURE", "VM compute summary", "VM", "vm-core-hour", "vm-memory-gb-hour", azureCollectorUrl, azureVmPayload(now), "Metric summary", "collector-replay", false, "Uses VM summaries through the live Azure collector."),
+                new DemoScenario("azure-functions", "AZURE", "Functions activity", "Functions", "functions-execution", "bandwidth-egress-gb", azureCollectorUrl, azureFunctionsPayload(now), "Metric summary", "collector-replay", false, "Uses Azure Functions summaries through the live Azure collector."),
+                new DemoScenario("azure-openai", "AZURE", "Azure OpenAI tokens", "Azure OpenAI", "azure-openai-input", "azure-openai-output", azureCollectorUrl, azureOpenAiPayload(now), "Metric summary", "collector-replay", false, "Uses Azure OpenAI summaries through the live Azure collector."),
+                new DemoScenario("azure-sql", "AZURE", "Azure SQL usage", "Azure SQL", "azure-sql-vcore-hour", "managed-disk-gb-month", azureCollectorUrl, azureSqlPayload(now), "Metric summary", "collector-replay", false, "Uses Azure SQL summaries through the live Azure collector."),
+                new DemoScenario("azure-cosmos", "AZURE", "Cosmos DB usage", "Cosmos DB", "cosmosdb-request-unit", "managed-disk-gb-month", azureCollectorUrl, azureCosmosPayload(now), "Metric summary", "collector-replay", false, "Uses Cosmos DB summaries through the live Azure collector."),
+
+                new DemoScenario("openai-usage", "OPENAI", "OpenAI usage sync", "OpenAI", "gpt-4-input", "gpt-4-output", openAiCollectorUrl, openAiCollectorPayload(), "Usage API sync", "collector-replay", false, "Uses a safe OpenAI usage sync payload through the live OpenAI collector.")
+        );
+    }
+
+    private Map<String, Object> awsS3Payload(Instant timestamp) {
+        return Map.of(
+                "batchReference", "poc-aws-s3-" + UUID.randomUUID(),
+                "source", "aws.s3",
+                "detail-type", "Object Created",
+                "time", timestamp.toString(),
+                "region", "ap-south-1",
+                "account", "demo-aws-account",
+                "detail", Map.of("bucket", Map.of("name", "cloudsight-demo"))
+        );
+    }
+
+    private Map<String, Object> awsLambdaPayload(Instant timestamp) {
+        return Map.of("metricType", "lambda-summary", "invocations", 2200000, "gbSeconds", 14400, "timestamp", timestamp.toString(), "regionCode", "ap-south-1");
+    }
+
+    private Map<String, Object> awsEc2Payload(Instant timestamp) {
+        return Map.of("metricType", "ec2-ebs-summary", "coreHours", 34, "gp3GbMonth", 260, "timestamp", timestamp.toString(), "regionCode", "ap-south-1");
+    }
+
+    private Map<String, Object> awsRdsPayload(Instant timestamp) {
+        return Map.of("metricType", "rds-summary", "instanceHours", 16, "timestamp", timestamp.toString(), "regionCode", "ap-south-1");
+    }
+
+    private Map<String, Object> awsApiGatewayPayload(Instant timestamp) {
+        return Map.of("metricType", "api-gateway-summary", "requests", 7600000, "egressGb", 44, "timestamp", timestamp.toString(), "regionCode", "ap-south-1");
+    }
+
+    private Map<String, Object> awsCloudFrontPayload(Instant timestamp) {
+        return Map.of("metricType", "cloudfront-summary", "requests", 1900000, "egressGb", 28, "timestamp", timestamp.toString(), "regionCode", "ap-south-1");
+    }
+
+    private Map<String, Object> awsDynamoPayload(Instant timestamp) {
+        return Map.of("metricType", "dynamodb-summary", "readUnits", 2800000, "writeUnits", 780000, "timestamp", timestamp.toString(), "regionCode", "ap-south-1");
+    }
+
+    private Map<String, Object> awsQueuePayload(Instant timestamp) {
+        return Map.of("metricType", "queueing-summary", "sqsRequests", 2400000, "snsPublishes", 640000, "timestamp", timestamp.toString(), "regionCode", "ap-south-1");
+    }
+
+    private Map<String, Object> gcpStoragePayload(Instant timestamp) {
+        return Map.of(
+                "protoPayload", Map.of(
+                        "serviceName", "storage.googleapis.com",
+                        "methodName", "storage.objects.create"
+                ),
+                "resource", Map.of(
+                        "labels", Map.of(
+                                "location", "asia-south1",
+                                "project_id", "cloudsight-demo-gcp"
+                        )
+                ),
+                "timestamp", timestamp.toString()
+        );
+    }
+
+    private Map<String, Object> gcpGeminiPayload(Instant timestamp) {
+        return Map.of("metricType", "gemini-summary", "model", "gemini-1.5-pro", "inputTokens", 4600, "outputTokens", 1900, "timestamp", timestamp.toString(), "regionCode", "asia-south1");
+    }
+
+    private Map<String, Object> gcpVisionPayload(Instant timestamp) {
+        return Map.of("metricType", "vision-summary", "objectDetectionMinutes", 240, "searchRequests", 5400, "timestamp", timestamp.toString(), "regionCode", "asia-south1");
+    }
+
+    private Map<String, Object> gcpCloudRunPayload(Instant timestamp) {
+        return Map.of("metricType", "cloud-run-summary", "requests", 2400000, "vcpuSeconds", 17200, "timestamp", timestamp.toString(), "regionCode", "asia-south1");
+    }
+
+    private Map<String, Object> gcpGkePayload(Instant timestamp) {
+        return Map.of("metricType", "gke-runtime-summary", "memoryGibSeconds", 38000, "clusterHours", 8, "timestamp", timestamp.toString(), "regionCode", "asia-south1");
+    }
+
+    private Map<String, Object> gcpBigQueryPayload(Instant timestamp) {
+        return Map.of("metricType", "bigquery-job", "terabytesScanned", 4, "timestamp", timestamp.toString(), "regionCode", "asia-south1");
+    }
+
+    private Map<String, Object> gcpPubSubPayload(Instant timestamp) {
+        return Map.of("metricType", "pubsub-summary", "messageOperations", 3400000, "classBOperations", 260000, "timestamp", timestamp.toString(), "regionCode", "asia-south1");
+    }
+
+    private List<Map<String, Object>> azureBlobPayload(Instant timestamp) {
+        return List.of(Map.of(
+                "id", UUID.randomUUID().toString(),
+                "eventType", "Microsoft.Storage.BlobCreated",
+                "eventTime", timestamp.toString(),
+                "data", Map.of("api", "centralindia")
+        ));
+    }
+
+    private Map<String, Object> azureVmPayload(Instant timestamp) {
+        return Map.of("metricType", "vm-summary", "coreHours", 24, "memoryGbHours", 96, "timestamp", timestamp.toString(), "regionCode", "centralindia");
+    }
+
+    private Map<String, Object> azureFunctionsPayload(Instant timestamp) {
+        return Map.of("metricType", "functions-summary", "executions", 1650000, "egressGb", 18, "timestamp", timestamp.toString(), "regionCode", "centralindia");
+    }
+
+    private Map<String, Object> azureOpenAiPayload(Instant timestamp) {
+        return Map.of("metricType", "azure-openai-summary", "inputTokens", 7200, "outputTokens", 3100, "timestamp", timestamp.toString(), "regionCode", "centralindia");
+    }
+
+    private Map<String, Object> azureSqlPayload(Instant timestamp) {
+        return Map.of("metricType", "sql-summary", "vcoreHours", 18, "diskGbMonth", 300, "timestamp", timestamp.toString(), "regionCode", "centralindia");
+    }
+
+    private Map<String, Object> azureCosmosPayload(Instant timestamp) {
+        return Map.of("metricType", "cosmos-summary", "requestUnits", 2200000, "diskGbMonth", 180, "timestamp", timestamp.toString(), "regionCode", "centralindia");
+    }
+
     private Map<String, Object> connectionTemplate(String provider) {
         return switch (provider.toUpperCase(Locale.ROOT)) {
             case "AWS" -> Map.of(
@@ -619,6 +882,21 @@ public class CloudSightHybridClient {
             String outputEndpoint,
             long inputUnits,
             long outputUnits
+    ) {}
+
+    private record DemoScenario(
+            String id,
+            String provider,
+            String title,
+            String serviceFamily,
+            String primaryEndpoint,
+            String secondaryEndpoint,
+            String collectorUrl,
+            Object payload,
+            String signalType,
+            String executionMode,
+            boolean realCloudReady,
+            String realCloudNote
     ) {}
 
     private record Session(String token, String apiKey) {}

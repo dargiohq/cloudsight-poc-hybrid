@@ -25,6 +25,16 @@ public class DemoController {
         return cloudSightHybridClient.contract();
     }
 
+    @GetMapping("/overview")
+    public Map<String, Object> overview() {
+        return cloudSightHybridClient.overview();
+    }
+
+    @GetMapping("/scenarios")
+    public List<Map<String, Object>> scenarios() {
+        return cloudSightHybridClient.scenarios();
+    }
+
     @PostMapping("/bootstrap")
     public Map<String, Object> bootstrap(
             @RequestParam(defaultValue = "1") int eventsPerProfile,
@@ -36,6 +46,14 @@ public class DemoController {
     @PostMapping("/bootstrap/realtime")
     public Map<String, Object> bootstrapRealtimeCollectors() {
         return cloudSightHybridClient.bootstrapRealtimeCollectors();
+    }
+
+    @PostMapping("/scenarios/{scenarioId}/run")
+    public Map<String, Object> runScenario(
+            @org.springframework.web.bind.annotation.PathVariable String scenarioId,
+            @RequestParam(defaultValue = "true") boolean verify
+    ) {
+        return cloudSightHybridClient.runScenario(scenarioId, verify);
     }
 
     @GetMapping("/audit")
