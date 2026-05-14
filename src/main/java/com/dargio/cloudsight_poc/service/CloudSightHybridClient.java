@@ -69,6 +69,8 @@ public class CloudSightHybridClient {
 
     private final RestTemplate restTemplate;
     private final AuditTrailService auditTrailService;
+    private volatile Session cachedSession;
+    private volatile Instant cachedSessionExpiresAt;
 
     public CloudSightHybridClient(AuditTrailService auditTrailService) {
         this.auditTrailService = auditTrailService;
@@ -176,6 +178,12 @@ public class CloudSightHybridClient {
     }
 
     private Session login() {
+        if (cachedSession != null
+                && cachedSessionExpiresAt != null
+                && cachedSessionExpiresAt.isAfter(Instant.now().plusSeconds(30))) {
+            return cachedSession;
+        }
+
         String loginUrl = baseUrl + "/auth/login";
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -211,7 +219,9 @@ public class CloudSightHybridClient {
         String apiKey = body == null ? "" : String.valueOf(body.get("apiKey"));
 
         record("hybrid", "POST", loginUrl, Map.of("Content-Type", "application/json"), Map.of("email", "REDACTED", "password", "REDACTED"), response.getStatusCode().value(), Map.of("token", "REDACTED", "apiKey", mask(apiKey)));
-        return new Session(token, apiKey);
+        cachedSession = new Session(token, apiKey);
+        cachedSessionExpiresAt = Instant.now().plus(45, ChronoUnit.MINUTES);
+        return cachedSession;
     }
 
     private List<Map<String, Object>> ensureConnections(String token) {
