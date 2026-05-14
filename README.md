@@ -23,6 +23,9 @@ Key endpoints:
 - `/demo/overview`
 - `/demo/scenarios`
 - `/demo/scenarios/{id}/run`
+- `/demo/live/setup`
+- `/demo/catalogs`
+- `/demo/live/providers/{provider}/run`
 - `/demo/contract`
 - `/demo/bootstrap`
 - `/demo/bootstrap/realtime`
@@ -48,4 +51,9 @@ Important note:
 
 - the premium console proves the collector-first architecture using safe provider-native signals through live collectors
 - it does not claim that every service in every cloud can be live-called without real cloud credentials and real cloud resources
-- `live provider calls` remain an optional extension path when explicit cloud credentials and customer-owned resources are configured
+- `live provider calls` now support one safe selected service per provider when credentials and resources are configured:
+  - `AWS`: S3 PutObject
+  - `GCP`: Cloud Storage upload
+  - `AZURE`: Blob upload
+  - `OPENAI`: Responses API
+- the expanded provider catalogs in the console show a broader service-family surface than the currently live-called subset

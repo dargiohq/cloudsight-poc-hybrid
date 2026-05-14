@@ -1,24 +1,41 @@
 package com.dargio.cloudsight_poc.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dargio.cloudsight_poc.dto.UsageRequest;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.MessageDigest;
+import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -29,6 +46,12 @@ public class CloudSightHybridClient {
     private static final int READ_TIMEOUT_MS = 60_000;
     private static final long COLLECTOR_DISPATCH_DELAY_MS = 2_500L;
     private static final long COLLECTOR_PROVIDER_DELAY_MS = 4_000L;
+    private static final DateTimeFormatter AWS_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(java.time.ZoneOffset.UTC);
+    private static final DateTimeFormatter AWS_DATE = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(java.time.ZoneOffset.UTC);
+    private static final String LIVE_AWS_PROVIDER = "AWS";
+    private static final String LIVE_GCP_PROVIDER = "GCP";
+    private static final String LIVE_AZURE_PROVIDER = "AZURE";
+    private static final String LIVE_OPENAI_PROVIDER = "OPENAI";
 
     @Value("${cloudsight.api.base-url}")
     private String baseUrl;
@@ -51,6 +74,36 @@ public class CloudSightHybridClient {
     @Value("${cloudsight.collector.openai-url}")
     private String openAiCollectorUrl;
 
+    @Value("${cloudsight.live.aws.region}")
+    private String liveAwsRegion;
+
+    @Value("${cloudsight.live.aws.bucket}")
+    private String liveAwsBucket;
+
+    @Value("${cloudsight.live.aws.access-key-id}")
+    private String liveAwsAccessKeyId;
+
+    @Value("${cloudsight.live.aws.secret-access-key}")
+    private String liveAwsSecretAccessKey;
+
+    @Value("${cloudsight.live.aws.session-token:}")
+    private String liveAwsSessionToken;
+
+    @Value("${cloudsight.live.gcp.bucket}")
+    private String liveGcpBucket;
+
+    @Value("${cloudsight.live.gcp.service-account-json}")
+    private String liveGcpServiceAccountJson;
+
+    @Value("${cloudsight.live.azure.blob-container-sas-url}")
+    private String liveAzureBlobContainerSasUrl;
+
+    @Value("${cloudsight.live.openai.api-key}")
+    private String liveOpenAiApiKey;
+
+    @Value("${cloudsight.live.openai.model}")
+    private String liveOpenAiModel;
+
     private static final List<ServiceProfile> PROFILES = List.of(
             profile("openai-gpt4", "OPENAI", "gpt-4-input", "gpt-4-output", 4200, 1800),
             profile("openai-gpt41", "OPENAI", "gpt-4.1-input", "gpt-4.1-output", 6400, 2700),
@@ -71,6 +124,8 @@ public class CloudSightHybridClient {
 
     private final RestTemplate restTemplate;
     private final AuditTrailService auditTrailService;
+    private final HttpClient httpClient;
+    private final ObjectMapper objectMapper;
     private volatile Session cachedSession;
     private volatile Instant cachedSessionExpiresAt;
 
@@ -80,6 +135,10 @@ public class CloudSightHybridClient {
         requestFactory.setConnectTimeout(CONNECT_TIMEOUT_MS);
         requestFactory.setReadTimeout(READ_TIMEOUT_MS);
         this.restTemplate = new RestTemplate(requestFactory);
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofMillis(CONNECT_TIMEOUT_MS))
+                .build();
+        this.objectMapper = new ObjectMapper();
     }
 
     public Map<String, Object> contract() {
@@ -120,10 +179,13 @@ public class CloudSightHybridClient {
         ));
         overview.put("coverage", Map.of(
                 "modeledScenarioCount", scenarios().size(),
+                "liveProviderScenarioCount", liveScenarios().size(),
                 "providerCount", 4,
-                "realCloudCallSupport", "Optional and credential-dependent. This console proves the collector architecture with safe provider-native signals.",
+                "catalogFamilyCount", catalogs().stream().mapToInt(item -> ((List<?>) item.getOrDefault("serviceFamilies", List.of())).size()).sum(),
+                "realCloudCallSupport", "Optional and credential-dependent. This console proves the collector architecture with safe provider-native signals and can run selected real provider calls when credentials are present.",
                 "recommendedClientStory", "Deploy collectors first, then add optional live provider credentials and billing connections."
         ));
+        overview.put("liveSetup", liveSetup());
 
         try {
             Session session = login();
@@ -144,6 +206,103 @@ public class CloudSightHybridClient {
         return overview;
     }
 
+    public List<Map<String, Object>> liveSetup() {
+        return List.of(
+                liveSetupView(LIVE_AWS_PROVIDER, "S3 PutObject", List.of(
+                        envRequirement("CLOUDSIGHT_LIVE_AWS_ACCESS_KEY_ID", configured(liveAwsAccessKeyId), "AWS access key id"),
+                        envRequirement("CLOUDSIGHT_LIVE_AWS_SECRET_ACCESS_KEY", configured(liveAwsSecretAccessKey), "AWS secret access key"),
+                        envRequirement("CLOUDSIGHT_LIVE_AWS_REGION", configured(liveAwsRegion), "AWS region"),
+                        envRequirement("CLOUDSIGHT_LIVE_AWS_BUCKET", configured(liveAwsBucket), "S3 bucket for live write test")
+                ), List.of(
+                        "Deploy the AWS collector and keep signed collector credentials configured.",
+                        "Create or reuse a non-PII demo bucket dedicated to CloudSight verification.",
+                        "Add AWS access key or short-lived role credentials to server-side secrets only.",
+                        "Run the live S3 scenario to put a tiny object, send the matching collector payload, and verify the entry in CloudSight."
+                ), liveResourceSummary("bucket", liveAwsBucket, "region", liveAwsRegion)),
+                liveSetupView(LIVE_GCP_PROVIDER, "Cloud Storage object upload", List.of(
+                        envRequirement("CLOUDSIGHT_LIVE_GCP_SERVICE_ACCOUNT_JSON", configured(liveGcpServiceAccountJson), "Service account JSON with storage write access"),
+                        envRequirement("CLOUDSIGHT_LIVE_GCP_BUCKET", configured(liveGcpBucket), "Cloud Storage bucket for live write test")
+                ), List.of(
+                        "Deploy the GCP collector and keep signed collector credentials configured.",
+                        "Create or reuse a non-PII Cloud Storage bucket dedicated to CloudSight verification.",
+                        "Store the service account JSON in a secret manager or Render secret, not in source control.",
+                        "Run the live GCP scenario to upload a tiny object, emit the matching collector payload, and verify the entry in CloudSight."
+                ), liveResourceSummary("bucket", liveGcpBucket)),
+                liveSetupView(LIVE_AZURE_PROVIDER, "Blob Storage block blob upload", List.of(
+                        envRequirement("CLOUDSIGHT_LIVE_AZURE_BLOB_CONTAINER_SAS_URL", configured(liveAzureBlobContainerSasUrl), "Container SAS URL with blob write permission")
+                ), List.of(
+                        "Deploy the Azure collector and keep signed collector credentials configured.",
+                        "Create or reuse a non-PII blob container dedicated to CloudSight verification.",
+                        "Store the SAS URL in server-side secrets only and rotate it like any other credential.",
+                        "Run the live Azure scenario to write a small blob, emit the matching collector payload, and verify the entry in CloudSight."
+                ), liveResourceSummary("containerSas", configured(liveAzureBlobContainerSasUrl) ? "Configured" : "Missing")),
+                liveSetupView(LIVE_OPENAI_PROVIDER, "OpenAI Responses API", List.of(
+                        envRequirement("CLOUDSIGHT_LIVE_OPENAI_API_KEY", configured(liveOpenAiApiKey), "OpenAI API key"),
+                        envRequirement("CLOUDSIGHT_LIVE_OPENAI_MODEL", configured(liveOpenAiModel), "OpenAI model to call")
+                ), List.of(
+                        "Deploy the OpenAI sync collector and keep signed collector credentials configured.",
+                        "Store the API key in server-side secrets only and restrict it to a demo-safe project.",
+                        "Use a short, non-PII prompt so the run produces real usage without sending customer content.",
+                        "Run the live OpenAI scenario to call the Responses API, forward actual usage counts through the collector, and verify the entry in CloudSight."
+                ), liveResourceSummary("model", liveOpenAiModel))
+        );
+    }
+
+    public List<Map<String, Object>> catalogs() {
+        return List.of(
+                catalogView(LIVE_AWS_PROVIDER, List.of(
+                        catalogFamily("S3", "collector-ready", true, true),
+                        catalogFamily("Lambda", "collector-ready", true, false),
+                        catalogFamily("EC2", "collector-ready", false, false),
+                        catalogFamily("EBS", "collector-ready", false, false),
+                        catalogFamily("RDS", "collector-ready", false, false),
+                        catalogFamily("API Gateway", "collector-ready", false, false),
+                        catalogFamily("CloudFront", "collector-ready", false, false),
+                        catalogFamily("DynamoDB", "collector-ready", false, false),
+                        catalogFamily("SQS", "collector-ready", false, false),
+                        catalogFamily("SNS", "collector-ready", false, false),
+                        catalogFamily("ECS", "catalog-expanded", false, false),
+                        catalogFamily("EKS", "catalog-expanded", false, false),
+                        catalogFamily("Redshift", "catalog-expanded", false, false)
+                )),
+                catalogView(LIVE_GCP_PROVIDER, List.of(
+                        catalogFamily("Cloud Storage", "collector-ready", true, true),
+                        catalogFamily("Gemini", "collector-ready", false, false),
+                        catalogFamily("Vision", "collector-ready", false, false),
+                        catalogFamily("Cloud Run", "collector-ready", false, false),
+                        catalogFamily("GKE", "collector-ready", false, false),
+                        catalogFamily("BigQuery", "collector-ready", false, false),
+                        catalogFamily("Pub/Sub", "collector-ready", false, false),
+                        catalogFamily("Firestore", "catalog-expanded", false, false),
+                        catalogFamily("Cloud SQL", "catalog-expanded", false, false),
+                        catalogFamily("Dataflow", "catalog-expanded", false, false)
+                )),
+                catalogView(LIVE_AZURE_PROVIDER, List.of(
+                        catalogFamily("Blob Storage", "collector-ready", true, true),
+                        catalogFamily("VM", "collector-ready", false, false),
+                        catalogFamily("Functions", "collector-ready", false, false),
+                        catalogFamily("Azure OpenAI", "collector-ready", false, false),
+                        catalogFamily("Azure SQL", "collector-ready", false, false),
+                        catalogFamily("Cosmos DB", "collector-ready", false, false),
+                        catalogFamily("Bandwidth", "collector-ready", false, false),
+                        catalogFamily("Service Bus", "catalog-expanded", false, false),
+                        catalogFamily("AKS", "catalog-expanded", false, false),
+                        catalogFamily("Application Gateway", "catalog-expanded", false, false)
+                )),
+                catalogView(LIVE_OPENAI_PROVIDER, List.of(
+                        catalogFamily("gpt-4", "collector-ready", false, false),
+                        catalogFamily("gpt-4o-mini", "collector-ready", false, false),
+                        catalogFamily("gpt-4.1", "collector-ready", true, true),
+                        catalogFamily("o3", "collector-ready", false, false),
+                        catalogFamily("Embeddings", "collector-ready", false, false),
+                        catalogFamily("Audio", "catalog-expanded", false, false),
+                        catalogFamily("Images", "catalog-expanded", false, false),
+                        catalogFamily("Batch", "catalog-expanded", false, false),
+                        catalogFamily("Fine-tuning", "catalog-expanded", false, false)
+                ))
+        );
+    }
+
     public List<Map<String, Object>> scenarios() {
         return scenarioDefinitions().stream()
                 .map(this::scenarioView)
@@ -155,6 +314,10 @@ public class CloudSightHybridClient {
                 .filter(candidate -> candidate.id().equalsIgnoreCase(scenarioId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Unknown scenario: " + scenarioId));
+
+        if ("live-provider-call".equals(scenario.executionMode())) {
+            return runLiveProvider(scenario.provider(), verify);
+        }
 
         Session session = login();
         ensureConnections(session.token());
@@ -174,6 +337,57 @@ public class CloudSightHybridClient {
                 "dispatch", dispatch,
                 "verification", verification
         );
+    }
+
+    public Map<String, Object> runLiveProvider(String provider, boolean verify) {
+        String normalizedProvider = provider.toUpperCase(Locale.ROOT);
+        DemoScenario scenario = scenarioDefinitions().stream()
+                .filter(candidate -> candidate.provider().equalsIgnoreCase(normalizedProvider))
+                .filter(candidate -> "live-provider-call".equals(candidate.executionMode()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No live scenario configured for provider: " + normalizedProvider));
+        try {
+            requireProviderConfigured(normalizedProvider);
+            Session session = login();
+            ensureConnections(session.token());
+
+            Map<String, Object> liveCall = switch (normalizedProvider) {
+                case LIVE_AWS_PROVIDER -> runAwsLiveS3Call();
+                case LIVE_GCP_PROVIDER -> runGcpLiveStorageCall();
+                case LIVE_AZURE_PROVIDER -> runAzureLiveBlobCall();
+                case LIVE_OPENAI_PROVIDER -> runOpenAiLiveCall();
+                default -> throw new IllegalArgumentException("Unsupported live provider: " + provider);
+            };
+
+            Map<String, Object> dispatch = postSingleCollectorPayload(
+                    normalizedProvider,
+                    scenario.collectorUrl(),
+                    liveCall.get("collectorPayload")
+            );
+
+            Map<String, Object> verification = verify
+                    ? verifyScenario(session.token(), scenario)
+                    : Map.of("status", "SKIPPED");
+
+            return Map.of(
+                    "scenario", scenarioView(scenario),
+                    "liveCall", liveCall,
+                    "dispatch", dispatch,
+                    "verification", verification
+            );
+        } catch (Exception error) {
+            Map<String, Object> wizard = liveSetup().stream()
+                    .filter(item -> normalizedProvider.equalsIgnoreCase(String.valueOf(item.get("provider"))))
+                    .findFirst()
+                    .orElse(Map.of("provider", normalizedProvider));
+            return Map.of(
+                    "status", "ERROR",
+                    "provider", normalizedProvider,
+                    "message", error.getMessage(),
+                    "scenario", scenarioView(scenario),
+                    "wizard", wizard
+            );
+        }
     }
 
     public Map<String, Object> bootstrap(int eventsPerProfile, int spreadDays) {
@@ -606,8 +820,9 @@ public class CloudSightHybridClient {
                 "provider", provider,
                 "collectorUrl", collectorUrl,
                 "serviceFamilies", families,
-                "executionMode", "collector-replay",
-                "liveProviderCalls", "Requires explicit cloud credentials and real cloud resources"
+                "executionMode", "collector-replay + optional live-provider-call",
+                "liveProviderReady", isProviderConfigured(provider),
+                "liveProviderCalls", realCloudNote(provider, "Selected live provider call is configured for this collector.")
         );
     }
 
@@ -651,7 +866,7 @@ public class CloudSightHybridClient {
 
     private List<DemoScenario> scenarioDefinitions() {
         Instant now = Instant.now();
-        return List.of(
+        List<DemoScenario> baseScenarios = List.of(
                 new DemoScenario("aws-s3", "AWS", "S3 object created", "S3", "s3-put", "s3-get", awsCollectorUrl, awsS3Payload(now), "S3 event", "collector-replay", false, "Uses a safe S3-style event payload through the live AWS collector."),
                 new DemoScenario("aws-lambda", "AWS", "Lambda execution summary", "Lambda", "lambda-request", "lambda-duration-gb-second", awsCollectorUrl, awsLambdaPayload(now), "Metric summary", "collector-replay", false, "Uses a Lambda runtime summary through the live AWS collector."),
                 new DemoScenario("aws-ec2-ebs", "AWS", "EC2 and EBS usage", "EC2 + EBS", "ec2-core-hour", "ebs-gp3-gb-month", awsCollectorUrl, awsEc2Payload(now), "Metric summary", "collector-replay", false, "Uses a compute and storage summary through the live AWS collector."),
@@ -677,6 +892,18 @@ public class CloudSightHybridClient {
                 new DemoScenario("azure-cosmos", "AZURE", "Cosmos DB usage", "Cosmos DB", "cosmosdb-request-unit", "managed-disk-gb-month", azureCollectorUrl, azureCosmosPayload(now), "Metric summary", "collector-replay", false, "Uses Cosmos DB summaries through the live Azure collector."),
 
                 new DemoScenario("openai-usage", "OPENAI", "OpenAI usage sync", "OpenAI", "gpt-4-input", "gpt-4-output", openAiCollectorUrl, openAiCollectorPayload(), "Usage API sync", "collector-replay", false, "Uses a safe OpenAI usage sync payload through the live OpenAI collector.")
+        );
+        List<DemoScenario> allScenarios = new ArrayList<>(baseScenarios);
+        allScenarios.addAll(liveScenarios());
+        return allScenarios;
+    }
+
+    private List<DemoScenario> liveScenarios() {
+        return List.of(
+                new DemoScenario("aws-s3-live", LIVE_AWS_PROVIDER, "Live S3 PutObject", "S3", "s3-put", "s3-get", awsCollectorUrl, Map.of(), "Live API call", "live-provider-call", isProviderConfigured(LIVE_AWS_PROVIDER), realCloudNote(LIVE_AWS_PROVIDER, "Writes a tiny object to the configured S3 bucket, then forwards the matching collector payload.")),
+                new DemoScenario("gcp-storage-live", LIVE_GCP_PROVIDER, "Live Cloud Storage upload", "Cloud Storage", "cloud-storage-class-a", "cloud-storage-class-b", gcpCollectorUrl, Map.of(), "Live API call", "live-provider-call", isProviderConfigured(LIVE_GCP_PROVIDER), realCloudNote(LIVE_GCP_PROVIDER, "Uploads a tiny object to the configured GCS bucket, then forwards the matching collector payload.")),
+                new DemoScenario("azure-blob-live", LIVE_AZURE_PROVIDER, "Live Blob upload", "Blob Storage", "blob-write", "blob-read", azureCollectorUrl, Map.of(), "Live API call", "live-provider-call", isProviderConfigured(LIVE_AZURE_PROVIDER), realCloudNote(LIVE_AZURE_PROVIDER, "Uploads a tiny block blob through the configured SAS URL, then forwards the matching collector payload.")),
+                new DemoScenario("openai-live", LIVE_OPENAI_PROVIDER, "Live OpenAI response", "OpenAI", "gpt-4.1-input", "gpt-4.1-output", openAiCollectorUrl, Map.of(), "Live API call", "live-provider-call", isProviderConfigured(LIVE_OPENAI_PROVIDER), realCloudNote(LIVE_OPENAI_PROVIDER, "Calls the OpenAI Responses API with a safe prompt, then forwards the real usage counts through the collector."))
         );
     }
 
@@ -787,6 +1014,420 @@ public class CloudSightHybridClient {
 
     private Map<String, Object> azureCosmosPayload(Instant timestamp) {
         return Map.of("metricType", "cosmos-summary", "requestUnits", 2200000, "diskGbMonth", 180, "timestamp", timestamp.toString(), "regionCode", "centralindia");
+    }
+
+    private Map<String, Object> runAwsLiveS3Call() {
+        requireProviderConfigured(LIVE_AWS_PROVIDER);
+        Instant now = Instant.now();
+        String objectKey = "cloudsight-live/" + now.toEpochMilli() + "-" + UUID.randomUUID() + ".txt";
+        String body = "CloudSight live S3 verification " + now;
+        String host = liveAwsBucket + ".s3." + liveAwsRegion + ".amazonaws.com";
+        String canonicalUri = "/" + uriPathSegment(objectKey);
+        String payloadHash = hex(sha256(body.getBytes(StandardCharsets.UTF_8)));
+        String amzDate = AWS_TIMESTAMP.format(now);
+        String dateStamp = AWS_DATE.format(now);
+
+        LinkedHashMap<String, String> canonicalHeaderMap = new LinkedHashMap<>();
+        canonicalHeaderMap.put("host", host);
+        canonicalHeaderMap.put("x-amz-content-sha256", payloadHash);
+        canonicalHeaderMap.put("x-amz-date", amzDate);
+        if (configured(liveAwsSessionToken)) {
+            canonicalHeaderMap.put("x-amz-security-token", liveAwsSessionToken);
+        }
+
+        String canonicalHeaders = canonicalHeaderMap.entrySet().stream()
+                .map(entry -> entry.getKey() + ":" + entry.getValue().trim() + "\n")
+                .reduce("", String::concat);
+        String signedHeaders = String.join(";", canonicalHeaderMap.keySet());
+        String canonicalRequest = "PUT\n" + canonicalUri + "\n\n" + canonicalHeaders + "\n" + signedHeaders + "\n" + payloadHash;
+        String scope = dateStamp + "/" + liveAwsRegion + "/s3/aws4_request";
+        String stringToSign = "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hex(sha256(canonicalRequest.getBytes(StandardCharsets.UTF_8)));
+        byte[] signingKey = awsSigningKey(liveAwsSecretAccessKey, dateStamp, liveAwsRegion, "s3");
+        String signature = hex(hmacSha256(signingKey, stringToSign));
+        String authorization = "AWS4-HMAC-SHA256 Credential=" + liveAwsAccessKeyId + "/" + scope + ", SignedHeaders=" + signedHeaders + ", Signature=" + signature;
+
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(URI.create("https://" + host + canonicalUri))
+                .timeout(java.time.Duration.ofMillis(READ_TIMEOUT_MS))
+                .header("x-amz-date", amzDate)
+                .header("x-amz-content-sha256", payloadHash)
+                .header("Authorization", authorization)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .PUT(HttpRequest.BodyPublishers.ofString(body));
+        if (configured(liveAwsSessionToken)) {
+            requestBuilder.header("x-amz-security-token", liveAwsSessionToken);
+        }
+
+        HttpResponse<String> response = send(requestBuilder.build(), "aws-live-call");
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("AWS S3 live call failed: " + response.statusCode() + " " + response.body());
+        }
+
+        return Map.of(
+                "provider", LIVE_AWS_PROVIDER,
+                "service", "S3 PutObject",
+                "status", "SUCCESS",
+                "resource", Map.of("bucket", liveAwsBucket, "key", objectKey, "region", liveAwsRegion),
+                "httpStatus", response.statusCode(),
+                "collectorPayload", awsS3Payload(now)
+        );
+    }
+
+    private Map<String, Object> runGcpLiveStorageCall() {
+        requireProviderConfigured(LIVE_GCP_PROVIDER);
+        Instant now = Instant.now();
+        Map<String, Object> serviceAccount = parseJsonMap(liveGcpServiceAccountJson);
+        String accessToken = gcpAccessToken(serviceAccount);
+        String objectName = "cloudsight-live/" + now.toEpochMilli() + "-" + UUID.randomUUID() + ".txt";
+        String uploadUrl = "https://storage.googleapis.com/upload/storage/v1/b/" + encodeQuery(liveGcpBucket) + "/o?uploadType=media&name=" + encodeQuery(objectName);
+        String body = "CloudSight live GCS verification " + now;
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(uploadUrl))
+                .timeout(java.time.Duration.ofMillis(READ_TIMEOUT_MS))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> response = send(request, "gcp-live-call");
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("GCP Cloud Storage live call failed: " + response.statusCode() + " " + response.body());
+        }
+
+        return Map.of(
+                "provider", LIVE_GCP_PROVIDER,
+                "service", "Cloud Storage upload",
+                "status", "SUCCESS",
+                "resource", Map.of("bucket", liveGcpBucket, "object", objectName),
+                "httpStatus", response.statusCode(),
+                "collectorPayload", gcpStoragePayload(now)
+        );
+    }
+
+    private Map<String, Object> runAzureLiveBlobCall() {
+        requireProviderConfigured(LIVE_AZURE_PROVIDER);
+        Instant now = Instant.now();
+        String blobName = "cloudsight-live-" + now.toEpochMilli() + "-" + UUID.randomUUID() + ".txt";
+        String blobUrl = appendBlobNameToSasUrl(liveAzureBlobContainerSasUrl, blobName);
+        String body = "CloudSight live Azure Blob verification " + now;
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(blobUrl))
+                .timeout(java.time.Duration.ofMillis(READ_TIMEOUT_MS))
+                .header("x-ms-blob-type", "BlockBlob")
+                .header("x-ms-version", "2023-11-03")
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .PUT(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> response = send(request, "azure-live-call");
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("Azure Blob live call failed: " + response.statusCode() + " " + response.body());
+        }
+
+        return Map.of(
+                "provider", LIVE_AZURE_PROVIDER,
+                "service", "Blob upload",
+                "status", "SUCCESS",
+                "resource", Map.of("blobUrl", redactUrl(blobUrl)),
+                "httpStatus", response.statusCode(),
+                "collectorPayload", azureBlobPayload(now)
+        );
+    }
+
+    private Map<String, Object> runOpenAiLiveCall() {
+        requireProviderConfigured(LIVE_OPENAI_PROVIDER);
+        Instant now = Instant.now();
+        Map<String, Object> payload = Map.of(
+                "model", liveOpenAiModel,
+                "input", "Summarize why collector-first multi-cloud cost visibility matters for a modern engineering team in one sentence.",
+                "max_output_tokens", 120
+        );
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.openai.com/v1/responses"))
+                .timeout(java.time.Duration.ofMillis(READ_TIMEOUT_MS))
+                .header("Authorization", "Bearer " + liveOpenAiApiKey)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(writeJson(payload)))
+                .build();
+        HttpResponse<String> response = send(request, "openai-live-call");
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("OpenAI live call failed: " + response.statusCode() + " " + response.body());
+        }
+        Map<String, Object> responseMap = parseJsonMap(response.body());
+        Map<String, Object> usage = mapValue(responseMap.get("usage"));
+        int inputTokens = integerValue(usage.get("input_tokens"));
+        int outputTokens = integerValue(usage.get("output_tokens"));
+        String model = Objects.toString(responseMap.getOrDefault("model", liveOpenAiModel), liveOpenAiModel);
+
+        return Map.of(
+                "provider", LIVE_OPENAI_PROVIDER,
+                "service", "Responses API",
+                "status", "SUCCESS",
+                "resource", Map.of("model", model, "inputTokens", inputTokens, "outputTokens", outputTokens),
+                "httpStatus", response.statusCode(),
+                "collectorPayload", Map.of(
+                        "batchReference", "live-openai-" + UUID.randomUUID(),
+                        "records", List.of(Map.of(
+                                "model", model,
+                                "inputTokens", inputTokens,
+                                "outputTokens", outputTokens,
+                                "timestamp", now.toString(),
+                                "feature", "live-poc"
+                        ))
+                )
+        );
+    }
+
+    private boolean isProviderConfigured(String provider) {
+        return switch (provider.toUpperCase(Locale.ROOT)) {
+            case LIVE_AWS_PROVIDER -> configured(liveAwsAccessKeyId) && configured(liveAwsSecretAccessKey) && configured(liveAwsRegion) && configured(liveAwsBucket);
+            case LIVE_GCP_PROVIDER -> configured(liveGcpServiceAccountJson) && configured(liveGcpBucket);
+            case LIVE_AZURE_PROVIDER -> configured(liveAzureBlobContainerSasUrl);
+            case LIVE_OPENAI_PROVIDER -> configured(liveOpenAiApiKey) && configured(liveOpenAiModel);
+            default -> false;
+        };
+    }
+
+    private void requireProviderConfigured(String provider) {
+        if (!isProviderConfigured(provider)) {
+            throw new IllegalStateException(provider + " live credentials are incomplete. Check the setup wizard and required environment variables.");
+        }
+    }
+
+    private String realCloudNote(String provider, String whenReadyMessage) {
+        return isProviderConfigured(provider)
+                ? whenReadyMessage
+                : "Live credentials are not configured yet. Use the setup wizard below to enable this provider.";
+    }
+
+    private Map<String, Object> liveSetupView(String provider, String selectedService, List<Map<String, Object>> requirements, List<String> steps, Map<String, Object> resources) {
+        List<String> missing = requirements.stream()
+                .filter(item -> !Boolean.TRUE.equals(item.get("configured")))
+                .map(item -> String.valueOf(item.get("env")))
+                .toList();
+        return Map.of(
+                "provider", provider,
+                "selectedService", selectedService,
+                "configured", missing.isEmpty(),
+                "missing", missing,
+                "requirements", requirements,
+                "steps", steps,
+                "resources", resources
+        );
+    }
+
+    private Map<String, Object> envRequirement(String env, boolean configured, String description) {
+        return Map.of("env", env, "configured", configured, "description", description);
+    }
+
+    private Map<String, Object> liveResourceSummary(String key1, String value1) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put(key1, configured(value1) ? value1 : "Missing");
+        return summary;
+    }
+
+    private Map<String, Object> liveResourceSummary(String key1, String value1, String key2, String value2) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put(key1, configured(value1) ? value1 : "Missing");
+        summary.put(key2, configured(value2) ? value2 : "Missing");
+        return summary;
+    }
+
+    private Map<String, Object> catalogView(String provider, List<Map<String, Object>> families) {
+        return Map.of("provider", provider, "serviceFamilies", families);
+    }
+
+    private Map<String, Object> catalogFamily(String name, String status, boolean selectedLiveCall, boolean writeVerified) {
+        return Map.of(
+                "name", name,
+                "status", status,
+                "selectedLiveCall", selectedLiveCall,
+                "writeVerified", writeVerified
+        );
+    }
+
+    private HttpResponse<String> send(HttpRequest request, String integrationOption) {
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            record(integrationOption, request.method(), request.uri().toString(), Map.of("Authorization", redactAuthorization(request), "Content-Type", headerValue(request, "Content-Type")), Map.of(), response.statusCode(), truncate(response.body()));
+            return response;
+        } catch (Exception error) {
+            record(integrationOption, request.method(), request.uri().toString(), Map.of("Authorization", redactAuthorization(request), "Content-Type", headerValue(request, "Content-Type")), Map.of(), 0, Map.of("error", error.getMessage()));
+            throw new IllegalStateException("Live provider call failed: " + error.getMessage(), error);
+        }
+    }
+
+    private String redactAuthorization(HttpRequest request) {
+        return request.headers().firstValue("Authorization").map(value -> value.startsWith("Bearer ") ? "Bearer REDACTED" : "REDACTED").orElse("");
+    }
+
+    private String headerValue(HttpRequest request, String key) {
+        return request.headers().firstValue(key).orElse("");
+    }
+
+    private Object truncate(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() > 500 ? value.substring(0, 500) + "…" : value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseJsonMap(String json) {
+        try {
+            return objectMapper.readValue(json, Map.class);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to parse JSON payload", error);
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to serialize JSON payload", error);
+        }
+    }
+
+    private String gcpAccessToken(Map<String, Object> serviceAccount) {
+        String tokenUri = Objects.toString(serviceAccount.getOrDefault("token_uri", "https://oauth2.googleapis.com/token"));
+        String clientEmail = Objects.toString(serviceAccount.get("client_email"), "");
+        String privateKeyPem = Objects.toString(serviceAccount.get("private_key"), "");
+        if (!configured(clientEmail) || !configured(privateKeyPem)) {
+            throw new IllegalStateException("GCP service account JSON is missing client_email or private_key");
+        }
+        long now = Instant.now().getEpochSecond();
+        Map<String, Object> header = Map.of("alg", "RS256", "typ", "JWT");
+        Map<String, Object> claim = Map.of(
+                "iss", clientEmail,
+                "scope", "https://www.googleapis.com/auth/devstorage.read_write",
+                "aud", tokenUri,
+                "iat", now,
+                "exp", now + 3600
+        );
+        String assertion = base64Url(writeJson(header)) + "." + base64Url(writeJson(claim));
+        String jwt = assertion + "." + base64Url(signRs256(assertion, privateKeyPem));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        String body = "grant_type=" + encodeQuery("urn:ietf:params:oauth:grant-type:jwt-bearer") + "&assertion=" + encodeQuery(jwt);
+        HttpEntity<String> entity = new HttpEntity<>(body, headers);
+        ResponseEntity<Map> response = restTemplate.exchange(tokenUri, HttpMethod.POST, entity, Map.class);
+        Map<String, Object> payload = response.getBody();
+        return Objects.toString(payload == null ? "" : payload.get("access_token"), "");
+    }
+
+    private byte[] signRs256(String data, String privateKeyPem) {
+        try {
+            Signature signature = Signature.getInstance("SHA256withRSA");
+            signature.initSign(loadPrivateKey(privateKeyPem));
+            signature.update(data.getBytes(StandardCharsets.UTF_8));
+            return signature.sign();
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to sign RSA payload", error);
+        }
+    }
+
+    private PrivateKey loadPrivateKey(String pem) {
+        try {
+            String sanitized = pem
+                    .replace("-----BEGIN PRIVATE KEY-----", "")
+                    .replace("-----END PRIVATE KEY-----", "")
+                    .replace("\\n", "")
+                    .replace("\n", "")
+                    .replace("\r", "");
+            byte[] decoded = Base64.getDecoder().decode(sanitized);
+            return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(decoded));
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to load RSA private key", error);
+        }
+    }
+
+    private byte[] awsSigningKey(String secret, String dateStamp, String region, String service) {
+        byte[] kDate = hmacSha256(("AWS4" + secret).getBytes(StandardCharsets.UTF_8), dateStamp);
+        byte[] kRegion = hmacSha256(kDate, region);
+        byte[] kService = hmacSha256(kRegion, service);
+        return hmacSha256(kService, "aws4_request");
+    }
+
+    private byte[] hmacSha256(byte[] key, String value) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            return mac.doFinal(value.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to calculate HMAC", error);
+        }
+    }
+
+    private byte[] sha256(byte[] value) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(value);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to calculate SHA-256", error);
+        }
+    }
+
+    private String hex(byte[] bytes) {
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            builder.append(String.format("%02x", value));
+        }
+        return builder.toString();
+    }
+
+    private String base64Url(String value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String base64Url(byte[] value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
+    }
+
+    private String encodeQuery(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private String uriPathSegment(String value) {
+        return value.split("/")
+                .length == 0 ? encodeQuery(value) : String.join("/", java.util.Arrays.stream(value.split("/"))
+                        .map(this::encodeQuery)
+                        .toList());
+    }
+
+    private String appendBlobNameToSasUrl(String containerSasUrl, String blobName) {
+        String[] parts = containerSasUrl.split("\\?", 2);
+        String base = parts[0].replaceAll("/$", "");
+        return base + "/" + encodeQuery(blobName) + (parts.length > 1 ? "?" + parts[1] : "");
+    }
+
+    private String redactUrl(String url) {
+        int queryIndex = url.indexOf('?');
+        return queryIndex > 0 ? url.substring(0, queryIndex) + "?REDACTED" : url;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mapValue(Object value) {
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+
+    private int integerValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private boolean configured(String value) {
+        return value != null && !value.isBlank();
     }
 
     private Map<String, Object> connectionTemplate(String provider) {

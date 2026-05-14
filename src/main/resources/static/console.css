@@ -120,7 +120,7 @@ h1 {
   border: 1px solid rgba(255,255,255,0.06);
 }
 
-.status-grid, .overview-grid, .collector-grid {
+.status-grid, .overview-grid, .collector-grid, .wizard-grid, .catalog-grid {
   display: grid;
   gap: 14px;
 }
@@ -128,6 +128,7 @@ h1 {
 .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .overview-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .collector-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wizard-grid, .catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 .layout {
   display: grid;
@@ -149,7 +150,7 @@ h1 {
   letter-spacing: -0.04em;
 }
 
-.card, .collector-card, .scenario-card, .audit-item {
+.card, .collector-card, .scenario-card, .audit-item, .wizard-card, .catalog-card {
   border-radius: 22px;
   border: 1px solid rgba(255,255,255,0.06);
   background: rgba(255,255,255,0.03);
@@ -173,9 +174,71 @@ h1 {
 .collector-card {
   padding: 18px;
 }
-.collector-card h3, .scenario-card h3 {
+.collector-card h3, .scenario-card h3, .wizard-card h3, .catalog-card h3 {
   margin: 0 0 10px;
   font-size: 1.15rem;
+}
+
+.wizard-card, .catalog-card {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.wizard-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.wizard-copy {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 18px;
+}
+
+.wizard-copy ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.inline-code {
+  margin: 0;
+  padding: 14px;
+  background: #04101f;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: #bfe0ff;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.84rem;
+}
+
+.catalog-list {
+  display: grid;
+  gap: 12px;
+}
+
+.catalog-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.catalog-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.status-inline {
+  margin-top: 12px;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .pills, .meta-list {
@@ -191,6 +254,16 @@ h1 {
   color: var(--cyan);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.pill-ok {
+  background: rgba(137, 245, 209, 0.12);
+  color: var(--mint);
+}
+
+.pill-warn {
+  background: rgba(255, 204, 122, 0.12);
+  color: var(--amber);
 }
 
 .scenario-groups {
@@ -281,7 +354,7 @@ h1 {
 .status-error { color: var(--danger); }
 
 @media (max-width: 1100px) {
-  .hero, .overview-grid, .collector-grid, .scenario-grid, .status-grid {
+  .hero, .overview-grid, .collector-grid, .scenario-grid, .status-grid, .wizard-grid, .catalog-grid, .wizard-copy {
     grid-template-columns: 1fr;
   }
   .panel-half, .panel-large { grid-column: span 12; }
