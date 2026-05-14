@@ -21,6 +21,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
@@ -94,6 +96,9 @@ public class CloudSightHybridClient {
 
     @Value("${cloudsight.live.gcp.service-account-json}")
     private String liveGcpServiceAccountJson;
+
+    @Value("${cloudsight.live.gcp.service-account-file:}")
+    private String liveGcpServiceAccountFile;
 
     @Value("${cloudsight.live.azure.blob-container-sas-url}")
     private String liveAzureBlobContainerSasUrl;
@@ -220,14 +225,14 @@ public class CloudSightHybridClient {
                         "Run the live S3 scenario to put a tiny object, send the matching collector payload, and verify the entry in CloudSight."
                 ), liveResourceSummary("bucket", liveAwsBucket, "region", liveAwsRegion)),
                 liveSetupView(LIVE_GCP_PROVIDER, "Cloud Storage object upload", List.of(
-                        envRequirement("CLOUDSIGHT_LIVE_GCP_SERVICE_ACCOUNT_JSON", configured(liveGcpServiceAccountJson), "Service account JSON with storage write access"),
+                        envRequirement("CLOUDSIGHT_LIVE_GCP_SERVICE_ACCOUNT_JSON or CLOUDSIGHT_LIVE_GCP_SERVICE_ACCOUNT_FILE", gcpServiceAccountConfigured(), "Service account JSON or secret file with storage write access"),
                         envRequirement("CLOUDSIGHT_LIVE_GCP_BUCKET", configured(liveGcpBucket), "Cloud Storage bucket for live write test")
                 ), List.of(
                         "Deploy the GCP collector and keep signed collector credentials configured.",
                         "Create or reuse a non-PII Cloud Storage bucket dedicated to CloudSight verification.",
-                        "Store the service account JSON in a secret manager or Render secret, not in source control.",
+                        "Store the service account JSON in a secret manager or Render secret file, not in source control.",
                         "Run the live GCP scenario to upload a tiny object, emit the matching collector payload, and verify the entry in CloudSight."
-                ), liveResourceSummary("bucket", liveGcpBucket)),
+                ), liveResourceSummary("bucket", liveGcpBucket, "credentialSource", gcpServiceAccountConfigured() ? gcpCredentialSource() : "Missing")),
                 liveSetupView(LIVE_AZURE_PROVIDER, "Blob Storage block blob upload", List.of(
                         envRequirement("CLOUDSIGHT_LIVE_AZURE_BLOB_CONTAINER_SAS_URL", configured(liveAzureBlobContainerSasUrl), "Container SAS URL with blob write permission")
                 ), List.of(
@@ -1076,7 +1081,7 @@ public class CloudSightHybridClient {
     private Map<String, Object> runGcpLiveStorageCall() {
         requireProviderConfigured(LIVE_GCP_PROVIDER);
         Instant now = Instant.now();
-        Map<String, Object> serviceAccount = parseJsonMap(liveGcpServiceAccountJson);
+        Map<String, Object> serviceAccount = parseJsonMap(resolvedLiveGcpServiceAccountJson());
         String accessToken = gcpAccessToken(serviceAccount);
         String objectName = "cloudsight-live/" + now.toEpochMilli() + "-" + UUID.randomUUID() + ".txt";
         String uploadUrl = "https://storage.googleapis.com/upload/storage/v1/b/" + encodeQuery(liveGcpBucket) + "/o?uploadType=media&name=" + encodeQuery(objectName);
@@ -1182,11 +1187,39 @@ public class CloudSightHybridClient {
     private boolean isProviderConfigured(String provider) {
         return switch (provider.toUpperCase(Locale.ROOT)) {
             case LIVE_AWS_PROVIDER -> configured(liveAwsAccessKeyId) && configured(liveAwsSecretAccessKey) && configured(liveAwsRegion) && configured(liveAwsBucket);
-            case LIVE_GCP_PROVIDER -> configured(liveGcpServiceAccountJson) && configured(liveGcpBucket);
+            case LIVE_GCP_PROVIDER -> gcpServiceAccountConfigured() && configured(liveGcpBucket);
             case LIVE_AZURE_PROVIDER -> configured(liveAzureBlobContainerSasUrl);
             case LIVE_OPENAI_PROVIDER -> configured(liveOpenAiApiKey) && configured(liveOpenAiModel);
             default -> false;
         };
+    }
+
+    private boolean gcpServiceAccountConfigured() {
+        return configured(liveGcpServiceAccountJson) || configured(liveGcpServiceAccountFile);
+    }
+
+    private String gcpCredentialSource() {
+        if (configured(liveGcpServiceAccountJson)) {
+            return "env";
+        }
+        if (configured(liveGcpServiceAccountFile)) {
+            return "file";
+        }
+        return "missing";
+    }
+
+    private String resolvedLiveGcpServiceAccountJson() {
+        if (configured(liveGcpServiceAccountJson)) {
+            return liveGcpServiceAccountJson;
+        }
+        if (!configured(liveGcpServiceAccountFile)) {
+            throw new IllegalStateException("GCP service account JSON is not configured");
+        }
+        try {
+            return Files.readString(Path.of(liveGcpServiceAccountFile), StandardCharsets.UTF_8);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to read GCP service account secret file", error);
+        }
     }
 
     private void requireProviderConfigured(String provider) {
