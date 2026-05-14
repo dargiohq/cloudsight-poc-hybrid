@@ -135,20 +135,23 @@ public class CloudSightHybridClient {
     }
 
     public Map<String, Object> bootstrapRealtimeCollectors() {
-        Session session;
+        Session session = null;
+        Map<String, Object> authStatus = Map.of("status", "SKIPPED");
         try {
             session = login();
         } catch (RestClientException error) {
-            return Map.of(
-                    "integrationOption", "hybrid-collector-realtime",
-                    "status", "ERROR",
-                    "stage", "workspace-authentication",
-                    "message", error.getMessage(),
-                    "audit", audit()
+            authStatus = Map.of(
+                    "status", "RATE_LIMITED",
+                    "message", error.getMessage()
             );
         }
 
-        List<Map<String, Object>> connectionResults = ensureConnections(session.token());
+        List<Map<String, Object>> connectionResults = session == null
+                ? List.of(Map.of(
+                "status", "SKIPPED",
+                "reason", "Workspace auth was unavailable for this run."
+        ))
+                : ensureConnections(session.token());
         List<Map<String, Object>> collectorResults = new ArrayList<>();
 
         collectorResults.add(postCollectorPayloads("AWS", awsCollectorUrl, awsCollectorPayloads()));
@@ -156,7 +159,13 @@ public class CloudSightHybridClient {
         collectorResults.add(postCollectorPayloads("AZURE", azureCollectorUrl, azureCollectorPayloads()));
         collectorResults.add(postCollectorPayloads("OPENAI", openAiCollectorUrl, List.of(openAiCollectorPayload())));
 
-        List<Map<String, Object>> readback = List.of(
+        List<Map<String, Object>> readback = session == null
+                ? List.of(Map.of(
+                "key", "workspaceReadback",
+                "status", "SKIPPED",
+                "reason", "Workspace auth was rate-limited, so collector dispatch results are returned without authenticated readback."
+        ))
+                : List.of(
                 safeReadback("connections", baseUrl + "/api/connections", session.token()),
                 safeReadback("dashboardOverview", baseUrl + "/api/dashboard/overview?days=30", session.token()),
                 safeReadback("usageSummary", baseUrl + "/api/usage/summary?days=30", session.token()),
@@ -166,6 +175,7 @@ public class CloudSightHybridClient {
         return Map.of(
                 "integrationOption", "hybrid-collector-realtime",
                 "status", collectorResults.stream().allMatch(item -> "SUCCESS".equals(item.get("status"))) ? "SUCCESS" : "PARTIAL",
+                "workspaceAuth", authStatus,
                 "connections", connectionResults,
                 "collectorDispatch", collectorResults,
                 "cloudSightReadback", readback,
