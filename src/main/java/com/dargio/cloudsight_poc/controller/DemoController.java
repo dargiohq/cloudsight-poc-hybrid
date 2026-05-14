@@ -33,6 +33,11 @@ public class DemoController {
         return cloudSightHybridClient.bootstrap(eventsPerProfile, spreadDays);
     }
 
+    @PostMapping("/bootstrap/realtime")
+    public Map<String, Object> bootstrapRealtimeCollectors() {
+        return cloudSightHybridClient.bootstrapRealtimeCollectors();
+    }
+
     @GetMapping("/audit")
     public List<Map<String, Object>> audit() {
         return cloudSightHybridClient.audit();

@@ -37,6 +37,18 @@ public class CloudSightHybridClient {
     @Value("${cloudsight.workspace.password}")
     private String workspacePassword;
 
+    @Value("${cloudsight.collector.aws-url}")
+    private String awsCollectorUrl;
+
+    @Value("${cloudsight.collector.gcp-url}")
+    private String gcpCollectorUrl;
+
+    @Value("${cloudsight.collector.azure-url}")
+    private String azureCollectorUrl;
+
+    @Value("${cloudsight.collector.openai-url}")
+    private String openAiCollectorUrl;
+
     private static final List<ServiceProfile> PROFILES = List.of(
             profile("openai-gpt4", "OPENAI", "gpt-4-input", "gpt-4-output", 4200, 1800),
             profile("openai-gpt41", "OPENAI", "gpt-4.1-input", "gpt-4.1-output", 6400, 2700),
@@ -72,12 +84,14 @@ public class CloudSightHybridClient {
                 "workflow", List.of(
                         "Authenticate with workspace admin credentials.",
                         "Ensure provider connections exist for AWS, GCP, AZURE, and OPENAI.",
+                        "Send provider-native payloads to deployed collectors for real-time automatic capture.",
                         "Use the returned CloudSight API key to send normalized usage rows.",
                         "Read dashboard, usage, connections, and reports back from CloudSight."
                 ),
                 "noPiiGuidance", List.of(
                         "Keep workspace admin credentials in server-side secrets only.",
                         "Use generic provider identifiers and secret references in connections.",
+                        "Collectors send only safe provider telemetry, not end-user content or prompts.",
                         "Send only normalized service, endpoint, unit, and timestamp data to usage ingestion."
                 )
         );
@@ -115,6 +129,45 @@ public class CloudSightHybridClient {
                         "results", usageResults
                 ),
                 "cloudSightReadback", readback
+        );
+    }
+
+    public Map<String, Object> bootstrapRealtimeCollectors() {
+        Session session;
+        try {
+            session = login();
+        } catch (RestClientException error) {
+            return Map.of(
+                    "integrationOption", "hybrid-collector-realtime",
+                    "status", "ERROR",
+                    "stage", "workspace-authentication",
+                    "message", error.getMessage(),
+                    "audit", audit()
+            );
+        }
+
+        List<Map<String, Object>> connectionResults = ensureConnections(session.token());
+        List<Map<String, Object>> collectorResults = new ArrayList<>();
+
+        collectorResults.add(postCollectorPayloads("AWS", awsCollectorUrl, awsCollectorPayloads()));
+        collectorResults.add(postCollectorPayloads("GCP", gcpCollectorUrl, gcpCollectorPayloads()));
+        collectorResults.add(postCollectorPayloads("AZURE", azureCollectorUrl, azureCollectorPayloads()));
+        collectorResults.add(postCollectorPayloads("OPENAI", openAiCollectorUrl, List.of(openAiCollectorPayload())));
+
+        List<Map<String, Object>> readback = List.of(
+                safeReadback("connections", baseUrl + "/api/connections", session.token()),
+                safeReadback("dashboardOverview", baseUrl + "/api/dashboard/overview?days=30", session.token()),
+                safeReadback("usageSummary", baseUrl + "/api/usage/summary?days=30", session.token()),
+                safeReadback("reportStatement", baseUrl + "/api/reports/statement?days=30", session.token())
+        );
+
+        return Map.of(
+                "integrationOption", "hybrid-collector-realtime",
+                "status", collectorResults.stream().allMatch(item -> "SUCCESS".equals(item.get("status"))) ? "SUCCESS" : "PARTIAL",
+                "connections", connectionResults,
+                "collectorDispatch", collectorResults,
+                "cloudSightReadback", readback,
+                "piiMode", "Provider-native event and metric summaries only. No user prompts, documents, or customer identifiers."
         );
     }
 
@@ -207,6 +260,58 @@ public class CloudSightHybridClient {
         return response.getBody();
     }
 
+    private Map<String, Object> postCollectorPayloads(String provider, String collectorUrl, List<Object> payloads) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        boolean anyError = false;
+        for (Object payload : payloads) {
+            Map<String, Object> result = postSingleCollectorPayload(provider, collectorUrl, payload);
+            results.add(result);
+            if (!"SUCCESS".equals(result.get("status"))) {
+                anyError = true;
+            }
+        }
+        return Map.of(
+                "provider", provider,
+                "status", anyError ? "PARTIAL" : "SUCCESS",
+                "collectorUrl", collectorUrl.replaceAll("/$", ""),
+                "batchesSent", payloads.size(),
+                "results", results
+        );
+    }
+
+    private Map<String, Object> postSingleCollectorPayload(String provider, String collectorUrl, Object body) {
+        String url = collectorUrl.replaceAll("/$", "");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Object> entity = new HttpEntity<>(body, headers);
+        ResponseEntity<Map> response;
+        try {
+            response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
+        } catch (RestClientException error) {
+            record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
+                    "provider", provider,
+                    "payload", body
+            ), 0, Map.of("error", error.getMessage()));
+            return Map.of(
+                    "provider", provider,
+                    "status", "ERROR",
+                    "collectorUrl", url,
+                    "error", error.getMessage()
+            );
+        }
+
+        record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
+                "provider", provider,
+                "payload", body
+        ), response.getStatusCode().value(), response.getBody());
+        return Map.of(
+                "provider", provider,
+                "status", "SUCCESS",
+                "collectorUrl", url,
+                "result", response.getBody()
+        );
+    }
+
     private Map<String, Object> postUsage(String url, String apiKey, UsageRequest body) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-API-KEY", apiKey);
@@ -259,6 +364,80 @@ public class CloudSightHybridClient {
                     "error", error.getMessage()
             );
         }
+    }
+
+    private List<Object> awsCollectorPayloads() {
+        return List.of(
+                Map.of(
+                        "batchReference", "poc-aws-s3-" + UUID.randomUUID(),
+                        "source", "aws.s3",
+                        "detail-type", "Object Created",
+                        "time", Instant.now().toString(),
+                        "region", "ap-south-1",
+                        "account", "demo-aws-account",
+                        "detail", Map.of("bucket", Map.of("name", "cloudsight-demo"))
+                ),
+                Map.of("metricType", "lambda-summary", "invocations", 2200000, "gbSeconds", 14400, "timestamp", Instant.now().toString(), "regionCode", "ap-south-1"),
+                Map.of("metricType", "ec2-ebs-summary", "coreHours", 34, "gp3GbMonth", 260, "timestamp", Instant.now().toString(), "regionCode", "ap-south-1"),
+                Map.of("metricType", "rds-summary", "instanceHours", 16, "timestamp", Instant.now().toString(), "regionCode", "ap-south-1"),
+                Map.of("metricType", "api-gateway-summary", "requests", 7600000, "egressGb", 44, "timestamp", Instant.now().toString(), "regionCode", "ap-south-1"),
+                Map.of("metricType", "cloudfront-summary", "requests", 1900000, "egressGb", 28, "timestamp", Instant.now().toString(), "regionCode", "ap-south-1"),
+                Map.of("metricType", "dynamodb-summary", "readUnits", 2800000, "writeUnits", 780000, "timestamp", Instant.now().toString(), "regionCode", "ap-south-1"),
+                Map.of("metricType", "queueing-summary", "sqsRequests", 2400000, "snsPublishes", 640000, "timestamp", Instant.now().toString(), "regionCode", "ap-south-1")
+        );
+    }
+
+    private List<Object> gcpCollectorPayloads() {
+        return List.of(
+                Map.of(
+                        "protoPayload", Map.of(
+                                "serviceName", "storage.googleapis.com",
+                                "methodName", "storage.objects.create"
+                        ),
+                        "resource", Map.of(
+                                "labels", Map.of(
+                                        "location", "asia-south1",
+                                        "project_id", "cloudsight-demo-gcp"
+                                )
+                        ),
+                        "timestamp", Instant.now().toString()
+                ),
+                Map.of("metricType", "gemini-summary", "model", "gemini-1.5-pro", "inputTokens", 4600, "outputTokens", 1900, "timestamp", Instant.now().toString(), "regionCode", "asia-south1"),
+                Map.of("metricType", "vision-summary", "objectDetectionMinutes", 240, "searchRequests", 5400, "timestamp", Instant.now().toString(), "regionCode", "asia-south1"),
+                Map.of("metricType", "cloud-run-summary", "requests", 2400000, "vcpuSeconds", 17200, "timestamp", Instant.now().toString(), "regionCode", "asia-south1"),
+                Map.of("metricType", "gke-runtime-summary", "memoryGibSeconds", 38000, "clusterHours", 8, "timestamp", Instant.now().toString(), "regionCode", "asia-south1"),
+                Map.of("metricType", "bigquery-job", "terabytesScanned", 4, "timestamp", Instant.now().toString(), "regionCode", "asia-south1"),
+                Map.of("metricType", "pubsub-summary", "messageOperations", 3400000, "classBOperations", 260000, "timestamp", Instant.now().toString(), "regionCode", "asia-south1")
+        );
+    }
+
+    private List<Object> azureCollectorPayloads() {
+        return List.of(
+                List.of(Map.of(
+                        "id", UUID.randomUUID().toString(),
+                        "eventType", "Microsoft.Storage.BlobCreated",
+                        "eventTime", Instant.now().toString(),
+                        "data", Map.of("api", "centralindia")
+                )),
+                Map.of("metricType", "vm-summary", "coreHours", 24, "memoryGbHours", 96, "timestamp", Instant.now().toString(), "regionCode", "centralindia"),
+                Map.of("metricType", "functions-summary", "executions", 1650000, "egressGb", 18, "timestamp", Instant.now().toString(), "regionCode", "centralindia"),
+                Map.of("metricType", "azure-openai-summary", "inputTokens", 7200, "outputTokens", 3100, "timestamp", Instant.now().toString(), "regionCode", "centralindia"),
+                Map.of("metricType", "sql-summary", "vcoreHours", 18, "diskGbMonth", 300, "timestamp", Instant.now().toString(), "regionCode", "centralindia"),
+                Map.of("metricType", "cosmos-summary", "requestUnits", 2200000, "diskGbMonth", 180, "timestamp", Instant.now().toString(), "regionCode", "centralindia")
+        );
+    }
+
+    private Map<String, Object> openAiCollectorPayload() {
+        return Map.of(
+                "batchReference", "poc-openai-" + UUID.randomUUID(),
+                "records", List.of(
+                        Map.of("model", "gpt-4", "inputTokens", 4200, "outputTokens", 1800, "timestamp", Instant.now().toString(), "feature", "assistant"),
+                        Map.of("model", "gpt-4o-mini", "inputTokens", 9600, "outputTokens", 3200, "timestamp", Instant.now().toString(), "feature", "copilot"),
+                        Map.of("model", "gpt-4.1", "inputTokens", 7200, "outputTokens", 2800, "timestamp", Instant.now().toString(), "feature", "analysis"),
+                        Map.of("model", "o3", "inputTokens", 5400, "outputTokens", 2200, "timestamp", Instant.now().toString(), "feature", "reasoning"),
+                        Map.of("model", "text-embedding-3-large", "inputTokens", 28000, "outputTokens", 0, "timestamp", Instant.now().toString(), "feature", "retrieval")
+                )
+        );
     }
 
     private List<UsageRequest> buildRequests(ServiceProfile profile, int events, int spreadDays) {
