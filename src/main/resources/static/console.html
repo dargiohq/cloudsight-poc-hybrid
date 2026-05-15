@@ -8,91 +8,132 @@
 </head>
 <body>
   <div class="shell">
-    <header class="hero">
-      <div class="hero-copy">
+    <header class="topbar">
+      <div class="brand-block">
         <div class="eyebrow">Dargio CloudSight POC</div>
-        <h1>Simple multi-cloud test console</h1>
+        <h1>Multi-cloud test playground</h1>
         <p class="hero-text">
-          Test AWS, GCP, Azure, and OpenAI in one place. Run one live proof per provider, inspect modeled
-          service families, and verify how each cloud lands inside CloudSight.
+          Pick any cloud service on the left, run a proof, and watch how CloudSight captures, normalizes,
+          prices, and explains the event on the right.
         </p>
-        <div class="hero-actions">
-          <button id="runRealtime" class="btn btn-primary">Run all collectors</button>
-          <button id="refreshOverview" class="btn btn-secondary">Refresh console</button>
-          <a class="btn btn-secondary" href="https://dargio-cloudsight-ui.onrender.com/" target="_blank" rel="noreferrer">Open CloudSight</a>
-        </div>
       </div>
-      <div class="hero-panel" id="heroPanel">
-        <div class="panel-label">At a glance</div>
-        <div class="status-grid" id="heroStats"></div>
+      <div class="top-actions">
+        <button id="runRealtime" class="btn btn-primary">Run all collectors</button>
+        <button id="refreshOverview" class="btn btn-secondary">Refresh</button>
+        <a class="btn btn-secondary" href="https://dargio-cloudsight-ui.onrender.com/" target="_blank" rel="noreferrer">Open CloudSight</a>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="panel panel-large">
-        <div class="panel-head">
-          <div>
-            <div class="panel-label">How to use this</div>
-            <h2>Three simple steps</h2>
-          </div>
-        </div>
-        <div class="step-grid" id="stepGrid"></div>
-      </section>
+    <section class="summary-strip" id="heroStats"></section>
 
-      <section class="panel panel-large">
-        <div class="panel-head">
+    <main class="workspace">
+      <aside class="runner-panel">
+        <div class="panel-head compact">
           <div>
-            <div class="panel-label">Cloud providers</div>
-            <h2>Pick a provider and run a test</h2>
-            <p class="muted">Each card gives you the fastest path to prove the provider is wired, then lets you expand into individual modeled families.</p>
+            <div class="panel-label">Step 1</div>
+            <h2>Choose a test</h2>
           </div>
         </div>
-        <div id="providerGrid" class="provider-grid"></div>
-      </section>
 
-      <section class="panel panel-large">
-        <div class="panel-head">
-          <div>
-            <div class="panel-label">Coverage matrix</div>
-            <h2>What is modeled per provider</h2>
-            <p class="muted">Use this as the simple client-facing coverage view: live proof service, modeled families, and next-surface catalog expansion.</p>
-          </div>
-        </div>
-        <div class="matrix-wrap">
-          <table class="coverage-table" id="serviceMatrix"></table>
-        </div>
-      </section>
+        <div id="providerTabs" class="provider-tabs"></div>
 
-      <section class="panel panel-large">
-        <div class="panel-head">
-          <div>
-            <div class="panel-label">Results</div>
-            <h2>Latest run and CloudSight response</h2>
-            <p class="muted">Run provider tests from the cards above. This panel shows the exact live call, collector dispatch, and verification payload.</p>
+        <section class="runner-section">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Selected cloud</div>
+              <h3 id="selectedProviderTitle">Provider</h3>
+            </div>
+            <span id="selectedProviderStatus" class="status-chip">—</span>
           </div>
-        </div>
-        <pre id="resultPanel" class="result-panel">Pick a provider card above and run a test.</pre>
-      </section>
+          <p id="selectedProviderSummary" class="muted"></p>
+          <div id="selectedProviderMeta" class="meta-grid"></div>
+        </section>
 
-      <section class="panel panel-half">
-        <div class="panel-head">
-          <div>
-            <div class="panel-label">Workspace snapshot</div>
-            <h2>What CloudSight currently sees</h2>
+        <section class="runner-section">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Live proof</div>
+              <h3>Fastest client demo</h3>
+            </div>
           </div>
-        </div>
-        <div id="overviewGrid" class="overview-grid"></div>
-      </section>
+          <div id="liveScenarioCard" class="live-scenario-card"></div>
+        </section>
 
-      <section class="panel panel-half">
+        <section class="runner-section">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Service families</div>
+              <h3>Run any modeled family</h3>
+            </div>
+          </div>
+          <div id="scenarioList" class="scenario-list"></div>
+        </section>
+      </aside>
+
+      <section class="inspector-panel">
         <div class="panel-head">
           <div>
-            <div class="panel-label">Audit</div>
-            <h2>Recent API and collector trail</h2>
+            <div class="panel-label">Step 2</div>
+            <h2>See what CloudSight captured</h2>
+            <p class="muted">This view explains the end-to-end flow in plain language so clients can understand what happened without reading raw logs first.</p>
           </div>
-          <button id="refreshAudit" class="btn btn-ghost">Reload</button>
         </div>
-        <div id="auditPanel" class="audit-panel"></div>
+
+        <div class="inspector-grid">
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Current test</div>
+                <h3 id="selectedScenarioTitle">Pick a service</h3>
+              </div>
+              <button id="runSelectedScenario" class="btn btn-primary">Run selected test</button>
+            </div>
+            <p id="selectedScenarioSummary" class="muted"></p>
+            <div id="selectedScenarioBadges" class="badge-row"></div>
+          </section>
+
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Capture flow</div>
+                <h3>How the signal moved</h3>
+              </div>
+            </div>
+            <ol id="flowSteps" class="flow-steps"></ol>
+          </section>
+
+          <section class="inspector-card inspector-card-wide">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">CloudSight output</div>
+                <h3>Result details</h3>
+              </div>
+            </div>
+            <div id="resultSummary" class="result-summary"></div>
+            <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
+          </section>
+
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Workspace snapshot</div>
+                <h3>What the product sees now</h3>
+              </div>
+            </div>
+            <div id="overviewGrid" class="overview-grid"></div>
+          </section>
+
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Audit trail</div>
+                <h3>Recent collector and API events</h3>
+              </div>
+              <button id="refreshAudit" class="btn btn-ghost">Reload</button>
+            </div>
+            <div id="auditPanel" class="audit-panel"></div>
+          </section>
+        </div>
       </section>
     </main>
   </div>

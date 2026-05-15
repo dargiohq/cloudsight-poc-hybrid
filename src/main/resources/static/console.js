@@ -1,15 +1,33 @@
-const overviewGrid = document.getElementById("overviewGrid");
-const providerGrid = document.getElementById("providerGrid");
-const serviceMatrix = document.getElementById("serviceMatrix");
-const stepGrid = document.getElementById("stepGrid");
-const resultPanel = document.getElementById("resultPanel");
-const auditPanel = document.getElementById("auditPanel");
 const heroStats = document.getElementById("heroStats");
+const providerTabs = document.getElementById("providerTabs");
+const selectedProviderTitle = document.getElementById("selectedProviderTitle");
+const selectedProviderStatus = document.getElementById("selectedProviderStatus");
+const selectedProviderSummary = document.getElementById("selectedProviderSummary");
+const selectedProviderMeta = document.getElementById("selectedProviderMeta");
+const liveScenarioCard = document.getElementById("liveScenarioCard");
+const scenarioList = document.getElementById("scenarioList");
+const selectedScenarioTitle = document.getElementById("selectedScenarioTitle");
+const selectedScenarioSummary = document.getElementById("selectedScenarioSummary");
+const selectedScenarioBadges = document.getElementById("selectedScenarioBadges");
+const runSelectedScenario = document.getElementById("runSelectedScenario");
+const flowSteps = document.getElementById("flowSteps");
+const resultSummary = document.getElementById("resultSummary");
+const resultPanel = document.getElementById("resultPanel");
+const overviewGrid = document.getElementById("overviewGrid");
+const auditPanel = document.getElementById("auditPanel");
 const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
+
+const state = {
+  models: [],
+  selectedProvider: null,
+  selectedScenarioId: null,
+  lastRun: null
+};
 
 document.getElementById("refreshOverview").addEventListener("click", loadAll);
 document.getElementById("refreshAudit").addEventListener("click", loadAudit);
 document.getElementById("runRealtime").addEventListener("click", () => runRealtime());
+runSelectedScenario.addEventListener("click", () => runSelected());
 
 async function json(url, options) {
   const response = await fetch(`${API_BASE}${url}`, options);
@@ -34,292 +52,279 @@ function formatCount(value) {
   return Number.isFinite(number) ? number.toLocaleString() : String(value ?? "—");
 }
 
-function renderHeroStats(overview) {
-  const cloudSight = overview.cloudSight || {};
-  const connections = cloudSight.connections?.summary || {};
-  const collectors = cloudSight.connections?.collectorSummary || {};
-
-  const cards = [
+function summaryCards(overview) {
+  const collectors = overview.cloudSight?.connections?.collectorSummary || {};
+  return [
     ["Providers", overview.coverage?.providerCount ?? 4],
     ["Modeled tests", overview.coverage?.modeledScenarioCount ?? 0],
     ["Healthy collectors", collectors.healthyCollectors ?? "—"],
-    ["Live-ready clouds", (overview.liveSetup || []).filter((item) => item.configured).length],
+    ["Live-ready clouds", (overview.liveSetup || []).filter((item) => item.configured).length]
   ];
+}
 
-  heroStats.innerHTML = cards.map(([label, value]) => `
-    <div class="card">
+function renderHeroStats(overview) {
+  heroStats.innerHTML = summaryCards(overview).map(([label, value]) => `
+    <div class="stat-card">
       <div class="label">${label}</div>
       <div class="value">${formatCount(value)}</div>
     </div>
   `).join("");
 }
 
-function renderSteps(overview) {
-  const recommendation = overview.coverage?.recommendedClientStory || "Deploy collectors first, then layer live credentials and billing connections.";
-  const realCloudSupport = overview.coverage?.realCloudCallSupport || "Credential-dependent real provider calls are optional.";
-  stepGrid.innerHTML = [
-    {
-      title: "1. Pick a cloud",
-      body: "Use the provider cards below. Each one shows whether live credentials are ready and what service is used for the proof."
-    },
-    {
-      title: "2. Run a proof",
-      body: "Start with a single live provider test, or expand the card to run individual modeled family checks through the collector."
-    },
-    {
-      title: "3. Read CloudSight",
-      body: `${recommendation} ${realCloudSupport}`
-    }
-  ].map((item) => `
-    <div class="step-card">
-      <div class="panel-label">Step</div>
-      <h3>${item.title}</h3>
-      <p>${item.body}</p>
-    </div>
-  `).join("");
-}
-
-function renderOverview(overview) {
-  const dashboard = overview.cloudSight?.dashboardOverview || {};
-  const usage = overview.cloudSight?.usageSummary || {};
-  const connections = overview.cloudSight?.connections?.summary || {};
-  const cards = [
-    ["Auth state", overview.cloudSight?.auth || "UNKNOWN"],
-    ["Current spend", dashboard.currentSpend ?? "—"],
-    ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
-    ["Providers connected", connections.providersConnected ?? "—"],
-  ];
-  overviewGrid.innerHTML = cards.map(([label, value]) => `
-    <div class="card">
-      <div class="label">${label}</div>
-      <div class="value">${typeof value === "number" ? formatCount(value) : value}</div>
-    </div>
-  `).join("");
-}
-
-function statusChip(configured, liveService) {
-  return configured
-    ? `<span class="status-chip status-ok">Live ready: ${escapeHtml(liveService)}</span>`
-    : `<span class="status-chip status-warn">Collector-ready only</span>`;
-}
-
-function buildProviderModels({ overview, scenarios, liveSetup, catalogs }) {
+function buildModels({ overview, scenarios, liveSetup, catalogs }) {
   return (overview.collectors || []).map((collector) => {
     const provider = collector.provider;
     const setup = (liveSetup || []).find((item) => item.provider === provider) || {};
     const catalog = (catalogs || []).find((item) => item.provider === provider) || {};
     const providerScenarios = (scenarios || []).filter((item) => item.provider === provider);
     const liveScenario = providerScenarios.find((item) => item.executionMode === "live-provider-call") || null;
-    const collectorScenarios = providerScenarios.filter((item) => item.executionMode !== "live-provider-call");
+    const serviceScenarios = providerScenarios.filter((item) => item.executionMode !== "live-provider-call");
     return {
       provider,
       collector,
       setup,
       catalog,
       liveScenario,
-      collectorScenarios,
-      readyFamilies: (catalog.serviceFamilies || []).filter((family) => family.status === "collector-ready"),
-      expandedFamilies: (catalog.serviceFamilies || []).filter((family) => family.status !== "collector-ready")
+      serviceScenarios
     };
   });
 }
 
-function renderProviders(models) {
-  providerGrid.innerHTML = models.map((model) => `
-    <article class="provider-card">
-      <div class="provider-head">
-        <div>
-          <div class="tag">${model.provider}</div>
-          <h3>${escapeHtml(model.setup.selectedService || "Collector-first provider flow")}</h3>
-        </div>
-        ${statusChip(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof")}
-      </div>
+function statusLabel(configured, selectedService) {
+  return configured ? `Live ready: ${selectedService}` : "Collector-ready only";
+}
 
-      <div class="provider-copy">
-        <p>${escapeHtml(model.collector.liveProviderCalls || "Collector flow available.")}</p>
-        <a class="provider-link" href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(model.collector.collectorUrl)}</a>
-      </div>
-
-      <div class="provider-metrics">
-        <div class="mini-stat">
-          <div class="label">Modeled families</div>
-          <div class="value">${formatCount((model.catalog.serviceFamilies || []).length)}</div>
-        </div>
-        <div class="mini-stat">
-          <div class="label">Collector tests</div>
-          <div class="value">${formatCount(model.collectorScenarios.length)}</div>
-        </div>
-        <div class="mini-stat">
-          <div class="label">Status</div>
-          <div class="value">${model.setup.configured ? "Ready" : "Setup"}</div>
-        </div>
-      </div>
-
-      <div class="provider-actions">
-        <button class="btn btn-primary" data-provider-live="${model.provider}" ${model.setup.configured ? "" : "disabled"}>${model.setup.configured ? "Run live + verify" : "Configure live secrets"}</button>
-        <button class="btn btn-ghost" data-provider-sample="${model.provider}" ${model.collectorScenarios.length ? "" : "disabled"}>Run collector sample</button>
-      </div>
-
-      <details>
-        <summary>Show modeled families and advanced tests</summary>
-        <div class="detail-grid">
-          <div class="detail-stack">
-            <div>
-              <div class="panel-label">Collector-ready families</div>
-              <div class="family-list">
-                ${(model.readyFamilies || []).map((family) => `<span class="pill ${family.selectedLiveCall ? "pill-ok" : ""}">${escapeHtml(family.name)}</span>`).join("")}
-              </div>
-            </div>
-            ${model.expandedFamilies.length ? `
-            <div>
-              <div class="panel-label">Catalog-expanded next</div>
-              <div class="family-list">
-                ${model.expandedFamilies.map((family) => `<span class="pill pill-warn">${escapeHtml(family.name)}</span>`).join("")}
-              </div>
-            </div>` : ""}
-            <div>
-              <div class="panel-label">Individual modeled tests</div>
-              <div class="detail-actions">
-                ${model.collectorScenarios.map((scenario) => `
-                  <button class="btn btn-secondary" data-scenario="${escapeHtml(scenario.id)}">${escapeHtml(scenario.serviceFamily)}</button>
-                `).join("")}
-              </div>
-            </div>
-          </div>
-          <div class="detail-stack">
-            <div>
-              <div class="panel-label">Setup requirements</div>
-              <div class="family-list">
-                ${(model.setup.requirements || []).map((item) => `<span class="pill ${item.configured ? "pill-ok" : "pill-warn"}">${escapeHtml(item.env)}</span>`).join("")}
-              </div>
-            </div>
-            <div>
-              <div class="panel-label">Live resources</div>
-              <pre class="inline-code">${escapeHtml(JSON.stringify(model.setup.resources || {}, null, 2))}</pre>
-            </div>
-            <div>
-              <div class="panel-label">Operator notes</div>
-              <ul>
-                ${(model.setup.steps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </details>
-    </article>
+function renderProviderTabs() {
+  providerTabs.innerHTML = state.models.map((model) => `
+    <button class="provider-tab ${model.provider === state.selectedProvider ? "active" : ""}" data-provider-tab="${model.provider}">
+      ${model.provider}
+    </button>
   `).join("");
 
-  providerGrid.querySelectorAll("[data-provider-live]").forEach((button) => {
-    if (button.disabled) {
-      return;
-    }
-    button.addEventListener("click", async () => {
-      const provider = button.dataset.providerLive;
-      button.disabled = true;
-      button.textContent = "Running live…";
-      try {
-        const result = await json(`/demo/live/providers/${provider}/run?verify=true`, { method: "POST" });
-        resultPanel.textContent = JSON.stringify(result, null, 2);
-        await loadAll();
-      } catch (error) {
-        resultPanel.textContent = error.stack || String(error);
-      } finally {
-        button.disabled = false;
-        button.textContent = "Run live + verify";
-      }
-    });
-  });
-
-  providerGrid.querySelectorAll("[data-provider-sample]").forEach((button) => {
-    if (button.disabled) {
-      return;
-    }
-    button.addEventListener("click", async () => {
-      const provider = button.dataset.providerSample;
-      const model = models.find((item) => item.provider === provider);
-      const scenario = model?.collectorScenarios?.[0];
-      if (!scenario) {
-        return;
-      }
-      button.disabled = true;
-      button.textContent = "Running sample…";
-      try {
-        const result = await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" });
-        resultPanel.textContent = JSON.stringify(result, null, 2);
-        await loadAll();
-      } catch (error) {
-        resultPanel.textContent = error.stack || String(error);
-      } finally {
-        button.disabled = false;
-        button.textContent = "Run collector sample";
-      }
-    });
-  });
-
-  providerGrid.querySelectorAll("[data-scenario]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const scenario = models.flatMap((item) => item.collectorScenarios).find((item) => item.id === button.dataset.scenario);
-      const defaultLabel = scenario?.serviceFamily || "Run test";
-      button.disabled = true;
-      button.textContent = "Running…";
-      try {
-        const result = await json(`/demo/scenarios/${button.dataset.scenario}/run?verify=true`, { method: "POST" });
-        resultPanel.textContent = JSON.stringify(result, null, 2);
-        await loadAll();
-      } catch (error) {
-        resultPanel.textContent = error.stack || String(error);
-      } finally {
-        button.disabled = false;
-        button.textContent = defaultLabel;
-      }
+  providerTabs.querySelectorAll("[data-provider-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedProvider = button.dataset.providerTab;
+      const model = getSelectedModel();
+      state.selectedScenarioId = model?.liveScenario?.id || model?.serviceScenarios?.[0]?.id || null;
+      renderSelectedProvider();
+      renderSelectedScenario();
     });
   });
 }
 
-function renderServiceMatrix(models) {
-  serviceMatrix.innerHTML = `
-    <thead>
-      <tr>
-        <th>Provider</th>
-        <th>Live proof service</th>
-        <th>Collector-ready families</th>
-        <th>Catalog-expanded next</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${models.map((model) => `
-        <tr>
-          <td>
-            <strong>${escapeHtml(model.provider)}</strong>
-            <span class="${model.setup.configured ? "status-ok" : "status-warn"}">${model.setup.configured ? "Live-ready" : "Collector-only today"}</span>
-          </td>
-          <td>
-            <strong>${escapeHtml(model.setup.selectedService || "Not selected")}</strong>
-            <span class="muted">${escapeHtml(model.collector.executionMode || "")}</span>
-          </td>
-          <td>
-            <div class="family-list">
-              ${(model.readyFamilies || []).map((family) => `<span class="pill ${family.writeVerified ? "pill-ok" : ""}">${escapeHtml(family.name)}</span>`).join("")}
-            </div>
-          </td>
-          <td>
-            <div class="family-list">
-              ${(model.expandedFamilies || []).map((family) => `<span class="pill pill-warn">${escapeHtml(family.name)}</span>`).join("")}
-            </div>
-          </td>
-        </tr>
-      `).join("")}
-    </tbody>
+function getSelectedModel() {
+  return state.models.find((model) => model.provider === state.selectedProvider) || null;
+}
+
+function getSelectedScenario() {
+  const model = getSelectedModel();
+  if (!model) {
+    return null;
+  }
+  return [model.liveScenario, ...model.serviceScenarios].find((scenario) => scenario?.id === state.selectedScenarioId) || model.liveScenario || model.serviceScenarios[0] || null;
+}
+
+function renderSelectedProvider() {
+  const model = getSelectedModel();
+  if (!model) {
+    return;
+  }
+
+  selectedProviderTitle.textContent = model.provider;
+  selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof");
+  selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
+  selectedProviderSummary.textContent = model.collector.liveProviderCalls || "Collector flow available.";
+
+  const metrics = [
+    ["Live proof", model.setup.selectedService || "Not configured"],
+    ["Modeled families", (model.catalog.serviceFamilies || []).length],
+    ["Collector URL", model.collector.collectorUrl]
+  ];
+
+  selectedProviderMeta.innerHTML = metrics.map(([label, value]) => `
+    <div class="meta-card">
+      <div class="label">${label}</div>
+      <div class="value">${escapeHtml(value)}</div>
+    </div>
+  `).join("");
+
+  liveScenarioCard.innerHTML = model.liveScenario ? `
+    <div class="service-title-row">
+      <strong>${escapeHtml(model.liveScenario.title)}</strong>
+      <span class="pill ${model.setup.configured ? "pill-ok" : "pill-warn"}">${model.setup.configured ? "Configured" : "Needs creds"}</span>
+    </div>
+    <div class="service-caption">${escapeHtml(model.liveScenario.realCloudNote || "Runs a real provider proof when credentials are configured.")}</div>
+    <div class="badge-row">
+      <span class="pill">${escapeHtml(model.liveScenario.primaryEndpoint)}</span>
+      <span class="pill">${escapeHtml(model.liveScenario.signalType)}</span>
+      <span class="pill">${escapeHtml(model.liveScenario.executionMode)}</span>
+    </div>
+  ` : "<div class='service-caption'>No live proof configured for this provider.</div>";
+
+  scenarioList.innerHTML = [model.liveScenario, ...model.serviceScenarios].filter(Boolean).map((scenario) => `
+    <button class="service-button ${scenario.id === state.selectedScenarioId ? "active" : ""}" data-scenario-select="${scenario.id}">
+      <div class="service-title-row">
+        <strong>${escapeHtml(scenario.serviceFamily)}</strong>
+        <span class="pill ${scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">${escapeHtml(scenario.executionMode === "live-provider-call" ? "live" : "collector")}</span>
+      </div>
+      <div class="service-caption">${escapeHtml(scenario.title)}</div>
+    </button>
+  `).join("");
+
+  scenarioList.querySelectorAll("[data-scenario-select]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedScenarioId = button.dataset.scenarioSelect;
+      renderSelectedProvider();
+      renderSelectedScenario();
+    });
+  });
+}
+
+function renderSelectedScenario() {
+  const scenario = getSelectedScenario();
+  const model = getSelectedModel();
+  if (!scenario || !model) {
+    return;
+  }
+
+  selectedScenarioTitle.textContent = scenario.title;
+  selectedScenarioSummary.textContent = scenario.realCloudNote || `Runs the ${scenario.serviceFamily} scenario through the ${model.provider} collector.`;
+  selectedScenarioBadges.innerHTML = `
+    <span class="pill">${escapeHtml(model.provider)}</span>
+    <span class="pill">${escapeHtml(scenario.primaryEndpoint)}</span>
+    <span class="pill">${escapeHtml(scenario.signalType)}</span>
+    <span class="pill ${scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">${escapeHtml(scenario.executionMode)}</span>
   `;
+
+  runSelectedScenario.disabled = scenario.executionMode === "live-provider-call" && !model.setup.configured;
+  runSelectedScenario.textContent = scenario.executionMode === "live-provider-call"
+    ? (model.setup.configured ? "Run live + verify" : "Configure live credentials")
+    : "Run collector test";
+
+  renderFlowExplanation(scenario, null);
+}
+
+function buildFlowItems(scenario, result) {
+  const provider = scenario.provider;
+  const isLive = scenario.executionMode === "live-provider-call";
+  const liveCall = result?.liveCall;
+  const dispatch = result?.dispatch;
+  const verification = result?.verification;
+
+  const steps = [
+    {
+      title: "Trigger",
+      body: isLive
+        ? `${provider} made a real provider call for ${scenario.serviceFamily}.`
+        : `${provider} generated a safe provider-native collector payload for ${scenario.serviceFamily}.`
+    },
+    {
+      title: "Collector",
+      body: dispatch?.collectorUrl
+        ? `The ${provider} collector received the signal and normalized it before sending it to CloudSight.`
+        : `The ${provider} collector will normalize this signal into CloudSight endpoints.`
+    },
+    {
+      title: "CloudSight ingestion",
+      body: dispatch?.result?.stored
+        ? `CloudSight accepted ${dispatch.result.stored} event(s) and stored the normalized usage row.`
+        : `CloudSight will store the matching usage row once the collector dispatch completes.`
+    },
+    {
+      title: "Verification",
+      body: verification?.status && verification.status !== "SKIPPED"
+        ? `CloudSight verification returned ${verification.status}.`
+        : "The verification step checks usage, dashboard, or report readback for the matching entry."
+    }
+  ];
+
+  if (liveCall?.resource) {
+    steps[0].body += ` Resource proof: ${Object.entries(liveCall.resource).map(([key, value]) => `${key}=${value}`).join(", ")}.`;
+  }
+  return steps;
+}
+
+function renderFlowExplanation(scenario, result) {
+  flowSteps.innerHTML = buildFlowItems(scenario, result).map((step) => `
+    <li>
+      <strong>${escapeHtml(step.title)}</strong>
+      ${escapeHtml(step.body)}
+    </li>
+  `).join("");
+}
+
+function renderResultSummary(result, scenario) {
+  if (!result) {
+    resultSummary.innerHTML = `
+      <span class="pill">${escapeHtml(scenario.provider)}</span>
+      <span class="pill">${escapeHtml(scenario.serviceFamily)}</span>
+      <span class="pill">${escapeHtml(scenario.executionMode)}</span>
+    `;
+    return;
+  }
+
+  const dispatch = result.dispatch || {};
+  const verification = result.verification || {};
+  const liveCall = result.liveCall || {};
+  const chips = [
+    scenario.provider,
+    scenario.serviceFamily,
+    dispatch.status || result.status || "PENDING",
+    verification.status || "SKIPPED"
+  ];
+
+  if (liveCall.status) {
+    chips.push(`live:${liveCall.status}`);
+  }
+
+  resultSummary.innerHTML = chips.map((chip, index) => `
+    <span class="pill ${index >= 2 && /SUCCESS/i.test(chip) ? "pill-ok" : ""}">${escapeHtml(chip)}</span>
+  `).join("");
+}
+
+async function runSelected() {
+  const scenario = getSelectedScenario();
+  if (!scenario) {
+    return;
+  }
+
+  runSelectedScenario.disabled = true;
+  runSelectedScenario.textContent = scenario.executionMode === "live-provider-call" ? "Running live…" : "Running collector…";
+
+  try {
+    const result = scenario.executionMode === "live-provider-call"
+      ? await json(`/demo/live/providers/${scenario.provider}/run?verify=true`, { method: "POST" })
+      : await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" });
+
+    state.lastRun = result;
+    renderFlowExplanation(scenario, result);
+    renderResultSummary(result, scenario);
+    resultPanel.textContent = JSON.stringify(result, null, 2);
+    await loadAudit();
+    await refreshWorkspaceSnapshot();
+  } catch (error) {
+    resultPanel.textContent = error.stack || String(error);
+  } finally {
+    renderSelectedScenario();
+  }
 }
 
 async function runRealtime() {
   const button = document.getElementById("runRealtime");
   button.disabled = true;
-  button.textContent = "Running collectors…";
+  button.textContent = "Running all…";
   try {
     const result = await json("/demo/bootstrap/realtime", { method: "POST" });
+    state.lastRun = result;
     resultPanel.textContent = JSON.stringify(result, null, 2);
+    resultSummary.innerHTML = `
+      <span class="pill pill-ok">${escapeHtml(result.status || "SUCCESS")}</span>
+      <span class="pill">${escapeHtml(result.integrationOption || "realtime")}</span>
+    `;
+    const scenario = getSelectedScenario();
+    if (scenario) {
+      renderFlowExplanation(scenario, result);
+    }
     await loadAll();
   } catch (error) {
     resultPanel.textContent = error.stack || String(error);
@@ -327,6 +332,24 @@ async function runRealtime() {
     button.disabled = false;
     button.textContent = "Run all collectors";
   }
+}
+
+function renderOverviewCards(overview) {
+  const dashboard = overview.cloudSight?.dashboardOverview || {};
+  const usage = overview.cloudSight?.usageSummary || {};
+  const connections = overview.cloudSight?.connections?.summary || {};
+  const cards = [
+    ["Auth state", overview.cloudSight?.auth || "UNKNOWN"],
+    ["Current spend", dashboard.currentSpend ?? "—"],
+    ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
+    ["Providers connected", connections.providersConnected ?? "—"]
+  ];
+  overviewGrid.innerHTML = cards.map(([label, value]) => `
+    <div class="meta-card">
+      <div class="label">${label}</div>
+      <div class="value">${escapeHtml(typeof value === "number" ? formatCount(value) : value)}</div>
+    </div>
+  `).join("");
 }
 
 function renderAudit(events) {
@@ -337,10 +360,10 @@ function renderAudit(events) {
     return `
       <div class="audit-item">
         <div class="audit-top">
-          <div><span class="audit-method">${event.method || "CALL"}</span> <span class="${statusClass}">${status || "—"}</span></div>
-          <div class="muted">${event.recordedAt || ""}</div>
+          <div><span class="audit-method">${escapeHtml(event.method || "CALL")}</span> <span class="${statusClass}">${status || "—"}</span></div>
+          <div class="muted">${escapeHtml(event.recordedAt || "")}</div>
         </div>
-        <div class="audit-url">${event.url || ""}</div>
+        <div class="audit-url">${escapeHtml(event.url || "")}</div>
       </div>
     `;
   }).join("");
@@ -351,6 +374,12 @@ async function loadAudit() {
   renderAudit(audit);
 }
 
+async function refreshWorkspaceSnapshot() {
+  const overview = await json("/demo/overview");
+  renderHeroStats(overview);
+  renderOverviewCards(overview);
+}
+
 async function loadAll() {
   const [overview, scenarios, liveSetup, catalogs] = await Promise.all([
     json("/demo/overview"),
@@ -358,12 +387,24 @@ async function loadAll() {
     json("/demo/live/setup"),
     json("/demo/catalogs")
   ]);
-  const models = buildProviderModels({ overview, scenarios, liveSetup, catalogs });
+
+  state.models = buildModels({ overview, scenarios, liveSetup, catalogs });
+
+  if (!state.selectedProvider && state.models.length) {
+    state.selectedProvider = state.models[0].provider;
+  }
+
+  const selectedModel = getSelectedModel();
+  const validScenarioIds = [selectedModel?.liveScenario, ...(selectedModel?.serviceScenarios || [])].filter(Boolean).map((item) => item.id);
+  if (!validScenarioIds.includes(state.selectedScenarioId)) {
+    state.selectedScenarioId = selectedModel?.liveScenario?.id || selectedModel?.serviceScenarios?.[0]?.id || null;
+  }
+
   renderHeroStats(overview);
-  renderSteps(overview);
-  renderOverview(overview);
-  renderProviders(models);
-  renderServiceMatrix(models);
+  renderOverviewCards(overview);
+  renderProviderTabs();
+  renderSelectedProvider();
+  renderSelectedScenario();
   await loadAudit();
 }
 
