@@ -52,20 +52,11 @@
         <section class="runner-section">
           <div class="section-head">
             <div>
-              <div class="panel-label">Live proof</div>
-              <h3>Fastest client demo</h3>
+              <div class="panel-label">Service families</div>
+              <h3>Pick a service to run</h3>
             </div>
           </div>
           <div id="liveScenarioCard" class="live-scenario-card"></div>
-        </section>
-
-        <section class="runner-section">
-          <div class="section-head">
-            <div>
-              <div class="panel-label">Service families</div>
-              <h3>Run any modeled family</h3>
-            </div>
-          </div>
           <div id="scenarioList" class="scenario-list"></div>
         </section>
       </aside>
@@ -77,6 +68,10 @@
             <h2>See what CloudSight captured</h2>
             <p class="muted">This view explains the end-to-end flow in plain language so clients can understand what happened without reading raw logs first.</p>
           </div>
+        </div>
+
+        <div id="runStatusBanner" class="status-banner status-banner-idle">
+          Choose a service on the left, then run it to watch the provider call, collector dispatch, and CloudSight readback.
         </div>
 
         <div class="inspector-grid">
@@ -110,16 +105,18 @@
               </div>
             </div>
             <div id="resultSummary" class="result-summary"></div>
+            <div id="resultNarrative" class="result-narrative"></div>
             <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
           </section>
 
           <section class="inspector-card">
             <div class="section-head">
               <div>
-                <div class="panel-label">Workspace snapshot</div>
-                <h3>What the product sees now</h3>
+                <div class="panel-label">CloudSight readback</div>
+                <h3>What the product can confirm</h3>
               </div>
             </div>
+            <div id="readbackNote" class="readback-note"></div>
             <div id="overviewGrid" class="overview-grid"></div>
           </section>
 

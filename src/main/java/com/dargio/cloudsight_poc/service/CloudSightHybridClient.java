@@ -133,6 +133,8 @@ public class CloudSightHybridClient {
     private final ObjectMapper objectMapper;
     private volatile Session cachedSession;
     private volatile Instant cachedSessionExpiresAt;
+    private volatile Map<String, Object> cachedCloudSightSnapshot;
+    private volatile Instant cachedCloudSightSnapshotAt;
 
     public CloudSightHybridClient(AuditTrailService auditTrailService) {
         this.auditTrailService = auditTrailService;
@@ -194,18 +196,31 @@ public class CloudSightHybridClient {
 
         try {
             Session session = login();
-            overview.put("cloudSight", Map.of(
-                    "auth", "CONNECTED",
-                    "connections", getJson(baseUrl + "/api/connections", session.token()),
-                    "dashboardOverview", getJson(baseUrl + "/api/dashboard/overview?days=30", session.token()),
-                    "usageSummary", getJson(baseUrl + "/api/usage/summary?days=30", session.token()),
-                    "reportStatement", getJson(baseUrl + "/api/reports/statement?days=30", session.token())
-            ));
+            Map<String, Object> cloudSight = new LinkedHashMap<>();
+            cloudSight.put("auth", "CONNECTED");
+            cloudSight.put("readbackMode", "LIVE");
+            cloudSight.put("connections", getJson(baseUrl + "/api/connections", session.token()));
+            cloudSight.put("dashboardOverview", getJson(baseUrl + "/api/dashboard/overview?days=30", session.token()));
+            cloudSight.put("usageSummary", getJson(baseUrl + "/api/usage/summary?days=30", session.token()));
+            cloudSight.put("reportStatement", getJson(baseUrl + "/api/reports/statement?days=30", session.token()));
+            cachedCloudSightSnapshot = new LinkedHashMap<>(cloudSight);
+            cachedCloudSightSnapshotAt = Instant.now();
+            overview.put("cloudSight", cloudSight);
         } catch (RestClientException error) {
-            overview.put("cloudSight", Map.of(
-                    "auth", "UNAVAILABLE",
-                    "message", error.getMessage()
-            ));
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            if (cachedCloudSightSnapshot != null && cachedCloudSightSnapshotAt != null) {
+                fallback.putAll(cachedCloudSightSnapshot);
+                fallback.put("auth", "DEGRADED");
+                fallback.put("readbackMode", "CACHED");
+                fallback.put("message", "Live CloudSight readback is temporarily rate-limited. Showing the last successful product snapshot.");
+                fallback.put("lastSuccessfulReadbackAt", cachedCloudSightSnapshotAt.toString());
+            } else {
+                fallback.put("auth", "DEFERRED");
+                fallback.put("readbackMode", "UNAVAILABLE");
+                fallback.put("message", "CloudSight workspace readback is temporarily unavailable, usually because the shared demo auth is being rate-limited. Live provider calls and collector dispatch can still succeed.");
+                fallback.put("error", error.getMessage());
+            }
+            overview.put("cloudSight", fallback);
         }
 
         return overview;
@@ -630,31 +645,46 @@ public class CloudSightHybridClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Object> entity = new HttpEntity<>(body, headers);
-        ResponseEntity<Map> response;
-        try {
-            response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
-        } catch (RestClientException error) {
-            record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
-                    "provider", provider,
-                    "payload", body
-            ), 0, Map.of("error", error.getMessage()));
-            return Map.of(
-                    "provider", provider,
-                    "status", "ERROR",
-                    "collectorUrl", url,
-                    "error", error.getMessage()
-            );
+        RestClientException lastError = null;
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            try {
+                ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
+                record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
+                        "provider", provider,
+                        "payload", body,
+                        "attempt", attempt
+                ), response.getStatusCode().value(), response.getBody());
+                return Map.of(
+                        "provider", provider,
+                        "status", "SUCCESS",
+                        "collectorUrl", url,
+                        "attempts", attempt,
+                        "result", response.getBody()
+                );
+            } catch (RestClientException error) {
+                lastError = error;
+                record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
+                        "provider", provider,
+                        "payload", body,
+                        "attempt", attempt
+                ), 0, Map.of("error", error.getMessage()));
+                if (!isRetryableCollectorError(error) || attempt == 4) {
+                    return Map.of(
+                            "provider", provider,
+                            "status", isRetryableCollectorError(error) ? "RATE_LIMITED" : "ERROR",
+                            "collectorUrl", url,
+                            "attempts", attempt,
+                            "error", error.getMessage()
+                    );
+                }
+                sleep(attempt * 2500L);
+            }
         }
-
-        record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
-                "provider", provider,
-                "payload", body
-        ), response.getStatusCode().value(), response.getBody());
         return Map.of(
                 "provider", provider,
-                "status", "SUCCESS",
+                "status", "ERROR",
                 "collectorUrl", url,
-                "result", response.getBody()
+                "error", lastError == null ? "Collector dispatch failed" : lastError.getMessage()
         );
     }
 
@@ -1545,6 +1575,21 @@ public class CloudSightHybridClient {
         }
         String normalized = message.toUpperCase(Locale.ROOT);
         return normalized.contains("429") || normalized.contains("TOO MANY REQUESTS") || normalized.contains("TIMED OUT");
+    }
+
+    private boolean isRetryableCollectorError(RestClientException error) {
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toUpperCase(Locale.ROOT);
+        return normalized.contains("429")
+                || normalized.contains("TOO MANY REQUESTS")
+                || normalized.contains("502")
+                || normalized.contains("503")
+                || normalized.contains("504")
+                || normalized.contains("BAD GATEWAY")
+                || normalized.contains("TIMED OUT");
     }
 
     private void sleep(long millis) {

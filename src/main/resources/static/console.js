@@ -12,16 +12,21 @@ const selectedScenarioBadges = document.getElementById("selectedScenarioBadges")
 const runSelectedScenario = document.getElementById("runSelectedScenario");
 const flowSteps = document.getElementById("flowSteps");
 const resultSummary = document.getElementById("resultSummary");
+const resultNarrative = document.getElementById("resultNarrative");
 const resultPanel = document.getElementById("resultPanel");
 const overviewGrid = document.getElementById("overviewGrid");
+const readbackNote = document.getElementById("readbackNote");
 const auditPanel = document.getElementById("auditPanel");
+const runStatusBanner = document.getElementById("runStatusBanner");
 const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
 
 const state = {
   models: [],
   selectedProvider: null,
   selectedScenarioId: null,
-  lastRun: null
+  lastRun: null,
+  loadingScenarioId: null,
+  runningAll: false
 };
 
 document.getElementById("refreshOverview").addEventListener("click", loadAll);
@@ -180,10 +185,12 @@ function renderSelectedProvider() {
   ` : "<div class='service-caption'>No live proof configured for this provider.</div>";
 
   scenarioList.innerHTML = [model.liveScenario, ...model.serviceScenarios].filter(Boolean).map((scenario) => `
-    <button class="service-button ${scenario.id === state.selectedScenarioId ? "active" : ""}" data-scenario-select="${scenario.id}">
+    <button class="service-button ${scenario.id === state.selectedScenarioId ? "active" : ""} ${scenario.id === state.loadingScenarioId ? "is-running" : ""}" data-scenario-select="${scenario.id}">
       <div class="service-title-row">
         <strong>${escapeHtml(scenario.serviceFamily)}</strong>
-        <span class="pill ${scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">${escapeHtml(scenario.executionMode === "live-provider-call" ? "live" : "collector")}</span>
+        <span class="pill ${scenario.id === state.loadingScenarioId ? "pill-running" : scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">
+          ${escapeHtml(scenario.id === state.loadingScenarioId ? "running" : scenario.executionMode === "live-provider-call" ? "live" : "collector")}
+        </span>
       </div>
       <div class="service-caption">${escapeHtml(scenario.title)}</div>
     </button>
@@ -215,9 +222,13 @@ function renderSelectedScenario() {
   `;
 
   runSelectedScenario.disabled = scenario.executionMode === "live-provider-call" && !model.setup.configured;
-  runSelectedScenario.textContent = scenario.executionMode === "live-provider-call"
-    ? (model.setup.configured ? "Run live + verify" : "Configure live credentials")
-    : "Run collector test";
+  const isRunning = state.loadingScenarioId === scenario.id;
+  runSelectedScenario.disabled = isRunning || (scenario.executionMode === "live-provider-call" && !model.setup.configured);
+  runSelectedScenario.textContent = isRunning
+    ? (scenario.executionMode === "live-provider-call" ? "Running live…" : "Running collector…")
+    : scenario.executionMode === "live-provider-call"
+      ? (model.setup.configured ? "Run live + verify" : "Configure live credentials")
+      : "Run collector test";
 
   renderFlowExplanation(scenario, null);
 }
@@ -300,14 +311,62 @@ function renderResultSummary(result, scenario) {
   `).join("");
 }
 
+function renderResultNarrative(result, scenario) {
+  if (!result) {
+    resultNarrative.innerHTML = `
+      <div class="narrative-card">
+        <strong>Ready to run</strong>
+        <p>Use the button above to send the selected ${escapeHtml(scenario.serviceFamily)} proof through the ${escapeHtml(scenario.provider)} flow.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const liveStatus = result.liveCall?.status || "SKIPPED";
+  const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
+  const verificationStatus = result.verification?.status || "SKIPPED";
+  let message = "The run completed.";
+
+  if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
+    message = "The real provider call succeeded and the collector delivered the signal to CloudSight successfully.";
+  } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
+    message = "The real provider call succeeded, but CloudSight throttled the collector dispatch. Wait a few seconds and retry.";
+  } else if (liveStatus === "SUCCESS" && dispatchStatus === "ERROR") {
+    message = "The real provider call succeeded, but the collector dispatch failed before CloudSight could store the signal.";
+  } else if (dispatchStatus === "SUCCESS") {
+    message = "The collector replay succeeded and CloudSight accepted the signal.";
+  } else if (verificationStatus === "RATE_LIMITED") {
+    message = "The proof ran, but workspace readback was throttled, so the product confirmation view is temporarily delayed.";
+  }
+
+  resultNarrative.innerHTML = `
+    <div class="narrative-card">
+      <strong>${escapeHtml(message)}</strong>
+      <p>Live call: ${escapeHtml(liveStatus)}. Collector dispatch: ${escapeHtml(dispatchStatus)}. Product verification: ${escapeHtml(verificationStatus)}.</p>
+    </div>
+  `;
+}
+
+function setBanner(text, tone = "idle") {
+  runStatusBanner.className = `status-banner status-banner-${tone}`;
+  runStatusBanner.textContent = text;
+}
+
 async function runSelected() {
   const scenario = getSelectedScenario();
   if (!scenario) {
     return;
   }
 
-  runSelectedScenario.disabled = true;
-  runSelectedScenario.textContent = scenario.executionMode === "live-provider-call" ? "Running live…" : "Running collector…";
+  state.loadingScenarioId = scenario.id;
+  renderSelectedProvider();
+  renderSelectedScenario();
+  setBanner(
+    scenario.executionMode === "live-provider-call"
+      ? `Running a real ${scenario.provider} provider call and forwarding the collector payload…`
+      : `Running the ${scenario.provider} collector replay for ${scenario.serviceFamily}…`,
+    "running"
+  );
 
   try {
     const result = scenario.executionMode === "live-provider-call"
@@ -317,20 +376,36 @@ async function runSelected() {
     state.lastRun = result;
     renderFlowExplanation(scenario, result);
     renderResultSummary(result, scenario);
+    renderResultNarrative(result, scenario);
     resultPanel.textContent = JSON.stringify(result, null, 2);
     await loadAudit();
     await refreshWorkspaceSnapshot();
+    const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
+    setBanner(
+      dispatchStatus === "SUCCESS"
+        ? `${scenario.serviceFamily} finished successfully. CloudSight accepted the signal.`
+        : dispatchStatus === "RATE_LIMITED"
+          ? `${scenario.serviceFamily} ran, but CloudSight throttled the collector dispatch. Try again in a few seconds.`
+          : `${scenario.serviceFamily} completed with an error. Review the CloudSight output panel for details.`,
+      dispatchStatus === "SUCCESS" ? "success" : dispatchStatus === "RATE_LIMITED" ? "warn" : "error"
+    );
   } catch (error) {
+    renderResultNarrative({ status: "ERROR" }, scenario);
     resultPanel.textContent = error.stack || String(error);
+    setBanner(`The ${scenario.serviceFamily} run failed before CloudSight could confirm it.`, "error");
   } finally {
+    state.loadingScenarioId = null;
+    renderSelectedProvider();
     renderSelectedScenario();
   }
 }
 
 async function runRealtime() {
   const button = document.getElementById("runRealtime");
+  state.runningAll = true;
   button.disabled = true;
   button.textContent = "Running all…";
+  setBanner("Running all collector proofs across every provider. This can take a little while.", "running");
   try {
     const result = await json("/demo/bootstrap/realtime", { method: "POST" });
     state.lastRun = result;
@@ -339,14 +414,27 @@ async function runRealtime() {
       <span class="pill pill-ok">${escapeHtml(result.status || "SUCCESS")}</span>
       <span class="pill">${escapeHtml(result.integrationOption || "realtime")}</span>
     `;
+    renderResultNarrative({
+      dispatch: { status: result.status || "SUCCESS" },
+      verification: { status: result.workspaceAuth?.status || "SKIPPED" }
+    }, getSelectedScenario() || { serviceFamily: "Realtime collectors" });
     const scenario = getSelectedScenario();
     if (scenario) {
       renderFlowExplanation(scenario, result);
     }
     await loadAll();
+    setBanner(
+      result.status === "SUCCESS"
+        ? "All collector proofs finished successfully."
+        : "Collector proofs finished, but some providers need another retry.",
+      result.status === "SUCCESS" ? "success" : "warn"
+    );
   } catch (error) {
+    renderResultNarrative({ status: "ERROR" }, getSelectedScenario() || { serviceFamily: "Realtime collectors" });
     resultPanel.textContent = error.stack || String(error);
+    setBanner("Running all collectors failed. Please retry once the throttling settles.", "error");
   } finally {
+    state.runningAll = false;
     button.disabled = false;
     button.textContent = "Run all collectors";
   }
@@ -356,8 +444,17 @@ function renderOverviewCards(overview) {
   const dashboard = overview.cloudSight?.dashboardOverview || {};
   const usage = overview.cloudSight?.usageSummary || {};
   const connections = overview.cloudSight?.connections?.summary || {};
+  const authState = overview.cloudSight?.auth || "UNKNOWN";
+  const mode = overview.cloudSight?.readbackMode || "UNAVAILABLE";
+  const note = overview.cloudSight?.message || "";
+  readbackNote.innerHTML = `
+    <div class="readback-pill ${authState === "CONNECTED" ? "ok" : authState === "DEGRADED" ? "warn" : "neutral"}">
+      ${escapeHtml(authState === "CONNECTED" ? "Live product readback" : authState === "DEGRADED" ? "Showing cached CloudSight snapshot" : "Product readback deferred")}
+    </div>
+    <p>${escapeHtml(note || `Readback mode: ${mode}`)}</p>
+  `;
   const cards = [
-    ["Auth state", overview.cloudSight?.auth || "UNKNOWN"],
+    ["Readback state", authState === "CONNECTED" ? "Live" : authState === "DEGRADED" ? "Cached" : "Deferred"],
     ["Current spend", dashboard.currentSpend ?? "—"],
     ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
     ["Providers connected", connections.providersConnected ?? "—"]
@@ -393,9 +490,16 @@ async function loadAudit() {
 }
 
 async function refreshWorkspaceSnapshot() {
-  const overview = await json("/demo/overview");
-  renderHeroStats(overview);
-  renderOverviewCards(overview);
+  try {
+    const overview = await json("/demo/overview");
+    renderHeroStats(overview);
+    renderOverviewCards(overview);
+  } catch (error) {
+    readbackNote.innerHTML = `
+      <div class="readback-pill neutral">Readback unavailable</div>
+      <p>CloudSight readback is temporarily unavailable, but the provider run result above is still valid.</p>
+    `;
+  }
 }
 
 async function loadAll() {
@@ -423,6 +527,7 @@ async function loadAll() {
   renderProviderTabs();
   renderSelectedProvider();
   renderSelectedScenario();
+  renderResultNarrative(null, getSelectedScenario() || { serviceFamily: "proof" });
   await loadAudit();
 }
 
