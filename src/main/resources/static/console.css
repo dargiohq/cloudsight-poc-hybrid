@@ -389,6 +389,11 @@ h3 {
   gap: 14px;
 }
 
+.table-meta {
+  margin-bottom: 12px;
+  line-height: 1.55;
+}
+
 .flow-steps {
   margin: 0;
   padding-left: 22px;
@@ -490,10 +495,22 @@ h3 {
   padding: 14px;
 }
 
+.audit-item-match {
+  border-color: rgba(125, 226, 255, 0.34);
+  background: linear-gradient(135deg, rgba(103, 163, 255, 0.14), rgba(125, 226, 255, 0.08));
+}
+
 .audit-top {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+  margin-bottom: 8px;
+}
+
+.audit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 8px;
 }
 
@@ -506,6 +523,51 @@ h3 {
   color: var(--muted);
   font-size: 0.82rem;
   word-break: break-all;
+}
+
+.usage-table-wrap {
+  overflow: auto;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #04101f;
+}
+
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+}
+
+.usage-table th,
+.usage-table td {
+  padding: 12px 14px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.usage-table th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.usage-table tbody tr + tr td {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.usage-row-highlight td {
+  background: rgba(125, 226, 255, 0.08);
+}
+
+.usage-secondary {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.empty-table {
+  color: var(--muted);
 }
 
 .pill,

@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 
 @Service
 public class CloudSightHybridClient {
@@ -131,6 +132,7 @@ public class CloudSightHybridClient {
     private final AuditTrailService auditTrailService;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final ThreadLocal<Map<String, Object>> auditContext = new ThreadLocal<>();
     private volatile Session cachedSession;
     private volatile Instant cachedSessionExpiresAt;
     private volatile Map<String, Object> cachedCloudSightSnapshot;
@@ -339,24 +341,28 @@ public class CloudSightHybridClient {
             return runLiveProvider(scenario.provider(), verify);
         }
 
-        Session session = login();
-        ensureConnections(session.token());
+        String runId = UUID.randomUUID().toString();
+        return withAuditContext(auditContextFor(runId, scenario), () -> {
+            Session session = login();
+            ensureConnections(session.token());
 
-        Map<String, Object> dispatch = postSingleCollectorPayload(
-                scenario.provider(),
-                scenario.collectorUrl(),
-                scenario.payload()
-        );
+            Map<String, Object> dispatch = postSingleCollectorPayload(
+                    scenario.provider(),
+                    scenario.collectorUrl(),
+                    scenario.payload()
+            );
 
-        Map<String, Object> verification = verify
-                ? verifyScenarioAfterDispatch(session.token(), scenario, dispatch)
-                : Map.of("status", "SKIPPED");
+            Map<String, Object> verification = verify
+                    ? verifyScenarioAfterDispatch(session.token(), scenario, dispatch)
+                    : Map.of("status", "SKIPPED");
 
-        return Map.of(
-                "scenario", scenarioView(scenario),
-                "dispatch", dispatch,
-                "verification", verification
-        );
+            return Map.of(
+                    "runId", runId,
+                    "scenario", scenarioView(scenario),
+                    "dispatch", dispatch,
+                    "verification", verification
+            );
+        });
     }
 
     public Map<String, Object> runLiveProvider(String provider, boolean verify) {
@@ -366,52 +372,57 @@ public class CloudSightHybridClient {
                 .filter(candidate -> "live-provider-call".equals(candidate.executionMode()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No live scenario configured for provider: " + normalizedProvider));
+        String runId = UUID.randomUUID().toString();
         try {
-            requireProviderConfigured(normalizedProvider);
-            Session session = null;
-            Map<String, Object> verification = Map.of("status", "SKIPPED");
-            if (verify) {
-                try {
-                    session = login();
-                    ensureConnections(session.token());
-                } catch (RestClientException error) {
-                    verification = Map.of(
-                            "status", "RATE_LIMITED",
-                            "message", error.getMessage()
-                    );
+            return withAuditContext(auditContextFor(runId, scenario), () -> {
+                requireProviderConfigured(normalizedProvider);
+                Session session = null;
+                Map<String, Object> verification = Map.of("status", "SKIPPED");
+                if (verify) {
+                    try {
+                        session = login();
+                        ensureConnections(session.token());
+                    } catch (RestClientException error) {
+                        verification = Map.of(
+                                "status", "RATE_LIMITED",
+                                "message", error.getMessage()
+                        );
+                    }
                 }
-            }
 
-            Map<String, Object> liveCall = switch (normalizedProvider) {
-                case LIVE_AWS_PROVIDER -> runAwsLiveS3Call();
-                case LIVE_GCP_PROVIDER -> runGcpLiveStorageCall();
-                case LIVE_AZURE_PROVIDER -> runAzureLiveBlobCall();
-                case LIVE_OPENAI_PROVIDER -> runOpenAiLiveCall();
-                default -> throw new IllegalArgumentException("Unsupported live provider: " + provider);
-            };
+                Map<String, Object> liveCall = switch (normalizedProvider) {
+                    case LIVE_AWS_PROVIDER -> runAwsLiveS3Call();
+                    case LIVE_GCP_PROVIDER -> runGcpLiveStorageCall();
+                    case LIVE_AZURE_PROVIDER -> runAzureLiveBlobCall();
+                    case LIVE_OPENAI_PROVIDER -> runOpenAiLiveCall();
+                    default -> throw new IllegalArgumentException("Unsupported live provider: " + provider);
+                };
 
-            Map<String, Object> dispatch = postSingleCollectorPayload(
-                    normalizedProvider,
-                    scenario.collectorUrl(),
-                    liveCall.get("collectorPayload")
-            );
+                Map<String, Object> dispatch = postSingleCollectorPayload(
+                        normalizedProvider,
+                        scenario.collectorUrl(),
+                        liveCall.get("collectorPayload")
+                );
 
-            if (verify && session != null) {
-                verification = verifyScenarioAfterDispatch(session.token(), scenario, dispatch);
-            }
+                if (verify && session != null) {
+                    verification = verifyScenarioAfterDispatch(session.token(), scenario, dispatch);
+                }
 
-            return Map.of(
-                    "scenario", scenarioView(scenario),
-                    "liveCall", liveCall,
-                    "dispatch", dispatch,
-                    "verification", verification
-            );
+                return Map.of(
+                        "runId", runId,
+                        "scenario", scenarioView(scenario),
+                        "liveCall", liveCall,
+                        "dispatch", dispatch,
+                        "verification", verification
+                );
+            });
         } catch (Exception error) {
             Map<String, Object> wizard = liveSetup().stream()
                     .filter(item -> normalizedProvider.equalsIgnoreCase(String.valueOf(item.get("provider"))))
                     .findFirst()
                     .orElse(Map.of("provider", normalizedProvider));
             return Map.of(
+                    "runId", runId,
                     "status", "ERROR",
                     "provider", normalizedProvider,
                     "message", error.getMessage(),
@@ -529,7 +540,7 @@ public class CloudSightHybridClient {
 
         ResponseEntity<Map> response = null;
         RestClientException lastError = null;
-        for (int attempt = 1; attempt <= 4; attempt++) {
+        for (int attempt = 1; attempt <= 6; attempt++) {
             try {
                 response = restTemplate.exchange(loginUrl, HttpMethod.POST, entity, Map.class);
                 break;
@@ -680,7 +691,7 @@ public class CloudSightHybridClient {
                         "payload", body,
                         "attempt", attempt
                 ), 0, Map.of("error", error.getMessage()));
-                if (!isRetryableCollectorError(error) || attempt == 4) {
+                if (!isRetryableCollectorError(error) || attempt == 6) {
                     return Map.of(
                             "provider", provider,
                             "status", isRetryableCollectorError(error) ? "RATE_LIMITED" : "ERROR",
@@ -689,7 +700,7 @@ public class CloudSightHybridClient {
                             "error", error.getMessage()
                     );
                 }
-                sleep(attempt * 2500L);
+                sleep(attempt * 3000L);
             }
         }
         return Map.of(
@@ -870,6 +881,10 @@ public class CloudSightHybridClient {
         event.put("requestBody", requestBody);
         event.put("responseStatus", status);
         event.put("responseBody", responseBody);
+        Map<String, Object> context = auditContext.get();
+        if (context != null && !context.isEmpty()) {
+            event.putAll(context);
+        }
         auditTrailService.record(event);
     }
 
@@ -911,13 +926,16 @@ public class CloudSightHybridClient {
         );
         Object latest = null;
         Object content = logs.get("content");
+        List<?> matchedLogs = List.of();
         if (content instanceof List<?> list && !list.isEmpty()) {
             latest = list.get(0);
+            matchedLogs = list;
         }
         return Map.of(
                 "status", latest == null ? "NOT_FOUND" : "SUCCESS",
                 "search", scenario.primaryEndpoint(),
                 "summary", summary,
+                "matchedLogs", matchedLogs,
                 "latestLog", latest == null ? Map.of() : latest
         );
     }
@@ -929,8 +947,53 @@ public class CloudSightHybridClient {
                     "reason", "Collector dispatch did not succeed, so CloudSight readback was skipped."
             );
         }
-        sleep(1800L);
-        return verifyScenario(token, scenario);
+        RestClientException lastError = null;
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            sleep(1500L * attempt);
+            try {
+                Map<String, Object> verification = verifyScenario(token, scenario);
+                if ("SUCCESS".equals(String.valueOf(verification.get("status"))) || attempt == 4) {
+                    return verification;
+                }
+            } catch (RestClientException error) {
+                lastError = error;
+                if (attempt == 4) {
+                    return Map.of(
+                            "status", "RATE_LIMITED",
+                            "message", error.getMessage()
+                    );
+                }
+            }
+        }
+        return Map.of(
+                "status", "ERROR",
+                "message", lastError == null ? "Verification could not confirm the latest row yet." : lastError.getMessage()
+        );
+    }
+
+    private Map<String, Object> auditContextFor(String runId, DemoScenario scenario) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("runId", runId);
+        context.put("provider", scenario.provider());
+        context.put("scenarioId", scenario.id());
+        context.put("serviceFamily", scenario.serviceFamily());
+        context.put("primaryEndpoint", scenario.primaryEndpoint());
+        context.put("executionMode", scenario.executionMode());
+        return context;
+    }
+
+    private <T> T withAuditContext(Map<String, Object> context, Supplier<T> supplier) {
+        Map<String, Object> previous = auditContext.get();
+        auditContext.set(context);
+        try {
+            return supplier.get();
+        } finally {
+            if (previous == null) {
+                auditContext.remove();
+            } else {
+                auditContext.set(previous);
+            }
+        }
     }
 
     private List<DemoScenario> scenarioDefinitions() {

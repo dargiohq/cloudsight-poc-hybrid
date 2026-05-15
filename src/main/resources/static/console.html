@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Hybrid POC Console</title>
-  <link rel="stylesheet" href="./console.css?v=2">
+  <link rel="stylesheet" href="./console.css?v=3">
 </head>
 <body>
   <div class="shell">
@@ -84,16 +84,6 @@
         <section class="request-card">
           <div class="section-head">
             <div>
-              <div class="panel-label">Live proof</div>
-              <h3>Fastest demo path</h3>
-            </div>
-          </div>
-          <div id="liveScenarioCard" class="live-scenario-card"></div>
-        </section>
-
-        <section class="request-card">
-          <div class="section-head">
-            <div>
               <div class="panel-label">Capture flow</div>
               <h3>How the signal moves</h3>
             </div>
@@ -142,18 +132,43 @@
           <section class="response-card">
             <div class="section-head">
               <div>
-                <div class="panel-label">Audit trail</div>
-                <h3>Recent collector and API events</h3>
+                <div class="panel-label">Captured usage rows</div>
+                <h3>What CloudSight stored</h3>
               </div>
-              <button id="refreshAudit" class="btn btn-ghost">Reload</button>
             </div>
-            <div id="auditPanel" class="audit-panel"></div>
+            <div id="usageTableMeta" class="table-meta muted">Run a test to see the latest matching CloudSight rows.</div>
+            <div class="usage-table-wrap">
+              <table class="usage-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Service</th>
+                    <th>Endpoints</th>
+                    <th>Units</th>
+                    <th>Cost</th>
+                  </tr>
+                </thead>
+                <tbody id="usageTableBody"></tbody>
+              </table>
+            </div>
           </section>
         </div>
+
+        <section class="response-card">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Audit trail</div>
+              <h3>Recent collector and API events</h3>
+            </div>
+            <button id="refreshAudit" class="btn btn-ghost">Reload</button>
+          </div>
+          <div id="auditMatchSummary" class="table-meta muted">Recent calls will appear here. Matching events from the current run are highlighted.</div>
+          <div id="auditPanel" class="audit-panel"></div>
+        </section>
       </section>
     </main>
   </div>
 
-  <script src="./console.js?v=2" defer></script>
+  <script src="./console.js?v=3" defer></script>
 </body>
 </html>

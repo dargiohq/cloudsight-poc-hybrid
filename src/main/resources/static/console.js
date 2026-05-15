@@ -4,7 +4,6 @@ const selectedProviderTitle = document.getElementById("selectedProviderTitle");
 const selectedProviderStatus = document.getElementById("selectedProviderStatus");
 const selectedProviderSummary = document.getElementById("selectedProviderSummary");
 const selectedProviderMeta = document.getElementById("selectedProviderMeta");
-const liveScenarioCard = document.getElementById("liveScenarioCard");
 const scenarioList = document.getElementById("scenarioList");
 const selectedScenarioTitle = document.getElementById("selectedScenarioTitle");
 const selectedScenarioSummary = document.getElementById("selectedScenarioSummary");
@@ -17,6 +16,9 @@ const resultPanel = document.getElementById("resultPanel");
 const overviewGrid = document.getElementById("overviewGrid");
 const readbackNote = document.getElementById("readbackNote");
 const auditPanel = document.getElementById("auditPanel");
+const auditMatchSummary = document.getElementById("auditMatchSummary");
+const usageTableMeta = document.getElementById("usageTableMeta");
+const usageTableBody = document.getElementById("usageTableBody");
 const runStatusBanner = document.getElementById("runStatusBanner");
 const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
 
@@ -165,24 +167,11 @@ function renderSelectedProvider() {
       <div class="provider-summary-row">
         <div class="provider-summary-label">Collector endpoint</div>
         <div class="provider-summary-value">
-          <a href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(model.collector.collectorUrl))}</a>
+          <a href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">Open collector</a>
         </div>
       </div>
     </div>
   `;
-
-  liveScenarioCard.innerHTML = model.liveScenario ? `
-    <div class="service-title-row">
-      <strong>${escapeHtml(model.liveScenario.title)}</strong>
-      <span class="pill ${model.setup.configured ? "pill-ok" : "pill-warn"}">${model.setup.configured ? "Configured" : "Needs creds"}</span>
-    </div>
-    <div class="service-caption">${escapeHtml(model.liveScenario.realCloudNote || "Runs a real provider proof when credentials are configured.")}</div>
-    <div class="badge-row">
-      <span class="pill">${escapeHtml(model.liveScenario.primaryEndpoint)}</span>
-      <span class="pill">${escapeHtml(model.liveScenario.signalType)}</span>
-      <span class="pill">${escapeHtml(model.liveScenario.executionMode)}</span>
-    </div>
-  ` : "<div class='service-caption'>No live proof configured for this provider.</div>";
 
   scenarioList.innerHTML = [model.liveScenario, ...model.serviceScenarios].filter(Boolean).map((scenario) => `
     <button class="service-button ${scenario.id === state.selectedScenarioId ? "active" : ""} ${scenario.id === state.loadingScenarioId ? "is-running" : ""}" data-scenario-select="${scenario.id}">
@@ -347,6 +336,74 @@ function renderResultNarrative(result, scenario) {
   `;
 }
 
+function statusTone(status) {
+  if (/SUCCESS/i.test(status || "")) {
+    return "ok";
+  }
+  if (/RATE|WARN|SKIPPED/i.test(status || "")) {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function renderUsageTable(result, scenario) {
+  const matched = result?.verification?.matchedLogs;
+  const rows = Array.isArray(matched)
+    ? matched
+    : result?.verification?.latestLog && Object.keys(result.verification.latestLog).length
+      ? [result.verification.latestLog]
+      : [];
+
+  if (!rows.length) {
+    usageTableMeta.textContent = result?.verification?.status === "RATE_LIMITED"
+      ? "CloudSight usage readback was rate-limited, so the latest matching rows are temporarily unavailable."
+      : `No captured usage rows are available yet for ${scenario?.primaryEndpoint || "this test"}.`;
+    usageTableBody.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-table">Run a test and this table will highlight the latest CloudSight rows for the selected endpoint.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  usageTableMeta.textContent = `Showing the latest ${rows.length} CloudSight row${rows.length === 1 ? "" : "s"} matching ${scenario.primaryEndpoint}. The newest match is highlighted.`;
+  usageTableBody.innerHTML = rows.map((row, index) => {
+    const primary = row.inputEndpoint || row.primaryEndpoint || "—";
+    const secondary = row.outputEndpoint || row.secondaryEndpoint || "—";
+    const units = `${formatCount(row.inputUnits || row.primaryUnits || 0)} / ${formatCount(row.outputUnits || row.secondaryUnits || 0)}`;
+    const cost = row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—";
+    const when = row.timestamp || row.createdAt || row.recordedAt || "—";
+    return `
+      <tr class="${index === 0 ? "usage-row-highlight" : ""}">
+        <td>${escapeHtml(when)}</td>
+        <td>${escapeHtml(row.service || row.provider || scenario.provider)}</td>
+        <td><strong>${escapeHtml(primary)}</strong><br><span class="usage-secondary">${escapeHtml(secondary)}</span></td>
+        <td>${escapeHtml(units)}</td>
+        <td>${escapeHtml(String(cost))}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function auditStage(event) {
+  if ((event.integrationOption || "").includes("collector")) {
+    return "Collector";
+  }
+  if ((event.url || "").includes("/auth/login")) {
+    return "Workspace auth";
+  }
+  if ((event.url || "").includes("/api/usage")) {
+    return "Usage ingestion";
+  }
+  if ((event.url || "").includes("/api/usage/logs") || (event.url || "").includes("/api/usage/summary")) {
+    return "Verification";
+  }
+  if ((event.url || "").includes("/api/dashboard") || (event.url || "").includes("/api/reports")) {
+    return "Readback";
+  }
+  return "API call";
+}
+
 function setBanner(text, tone = "idle") {
   runStatusBanner.className = `status-banner status-banner-${tone}`;
   runStatusBanner.textContent = text;
@@ -377,6 +434,7 @@ async function runSelected() {
     renderFlowExplanation(scenario, result);
     renderResultSummary(result, scenario);
     renderResultNarrative(result, scenario);
+    renderUsageTable(result, scenario);
     resultPanel.textContent = JSON.stringify(result, null, 2);
     await loadAudit();
     await refreshWorkspaceSnapshot();
@@ -421,6 +479,7 @@ async function runRealtime() {
     const scenario = getSelectedScenario();
     if (scenario) {
       renderFlowExplanation(scenario, result);
+      renderUsageTable(result, scenario);
     }
     await loadAll();
     setBanner(
@@ -468,15 +527,31 @@ function renderOverviewCards(overview) {
 }
 
 function renderAudit(events) {
-  const recent = (events || []).slice(0, 20);
+  const recent = (events || []).slice(0, 24);
+  const runId = state.lastRun?.runId;
+  const matched = runId ? recent.filter((event) => event.runId === runId) : [];
+  auditMatchSummary.textContent = runId
+    ? `${matched.length} audit event${matched.length === 1 ? "" : "s"} from the current run are highlighted below.`
+    : "Recent calls will appear here. Matching events from the current run are highlighted.";
   auditPanel.innerHTML = recent.map((event) => {
     const status = Number(event.responseStatus || 0);
     const statusClass = status >= 400 ? "status-error" : status >= 300 ? "status-warn" : "status-ok";
+    const isMatch = runId && event.runId === runId;
     return `
-      <div class="audit-item">
+      <div class="audit-item ${isMatch ? "audit-item-match" : ""}">
         <div class="audit-top">
-          <div><span class="audit-method">${escapeHtml(event.method || "CALL")}</span> <span class="${statusClass}">${status || "—"}</span></div>
+          <div>
+            <span class="audit-method">${escapeHtml(event.method || "CALL")}</span>
+            <span class="pill ${statusTone(event.responseStatus >= 400 ? "ERROR" : event.responseStatus >= 300 ? "WARN" : "SUCCESS")}">${escapeHtml(auditStage(event))}</span>
+            ${isMatch ? '<span class="pill pill-ok">current run</span>' : ""}
+          </div>
           <div class="muted">${escapeHtml(event.recordedAt || "")}</div>
+        </div>
+        <div class="audit-tags">
+          <span class="status-chip ${statusClass}">${status || "—"}</span>
+          ${event.provider ? `<span class="pill">${escapeHtml(event.provider)}</span>` : ""}
+          ${event.serviceFamily ? `<span class="pill">${escapeHtml(event.serviceFamily)}</span>` : ""}
+          ${event.primaryEndpoint ? `<span class="pill">${escapeHtml(event.primaryEndpoint)}</span>` : ""}
         </div>
         <div class="audit-url">${escapeHtml(event.url || "")}</div>
       </div>
@@ -528,6 +603,7 @@ async function loadAll() {
   renderSelectedProvider();
   renderSelectedScenario();
   renderResultNarrative(null, getSelectedScenario() || { serviceFamily: "proof" });
+  renderUsageTable(null, getSelectedScenario() || {});
   await loadAudit();
 }
 
