@@ -26,8 +26,8 @@
 
     <section class="summary-strip" id="heroStats"></section>
 
-    <main class="workspace">
-      <aside class="runner-panel">
+    <main class="playground-shell">
+      <aside class="service-sidebar">
         <div class="panel-head compact">
           <div>
             <div class="panel-label">Step 1</div>
@@ -37,7 +37,7 @@
 
         <div id="providerTabs" class="provider-tabs"></div>
 
-        <section class="runner-section">
+        <section class="runner-section compact-section">
           <div class="section-head">
             <div>
               <div class="panel-label">Selected cloud</div>
@@ -49,24 +49,65 @@
           <div id="selectedProviderMeta" class="provider-summary-list"></div>
         </section>
 
-        <section class="runner-section">
+        <section class="runner-section compact-section">
           <div class="section-head">
             <div>
               <div class="panel-label">Service families</div>
               <h3>Pick a service to run</h3>
             </div>
           </div>
-          <div id="liveScenarioCard" class="live-scenario-card"></div>
           <div id="scenarioList" class="scenario-list"></div>
         </section>
       </aside>
 
-      <section class="inspector-panel">
+      <section class="request-panel">
         <div class="panel-head">
           <div>
             <div class="panel-label">Step 2</div>
+            <h2>Run the proof</h2>
+            <p class="muted">Each run makes a real provider call or a collector replay, then forwards the normalized signal into CloudSight.</p>
+          </div>
+        </div>
+
+        <section class="request-card">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Current test</div>
+              <h3 id="selectedScenarioTitle">Pick a service</h3>
+            </div>
+            <button id="runSelectedScenario" class="btn btn-primary">Run selected test</button>
+          </div>
+          <p id="selectedScenarioSummary" class="muted"></p>
+          <div id="selectedScenarioBadges" class="badge-row"></div>
+        </section>
+
+        <section class="request-card">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Live proof</div>
+              <h3>Fastest demo path</h3>
+            </div>
+          </div>
+          <div id="liveScenarioCard" class="live-scenario-card"></div>
+        </section>
+
+        <section class="request-card">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Capture flow</div>
+              <h3>How the signal moves</h3>
+            </div>
+          </div>
+          <ol id="flowSteps" class="flow-steps"></ol>
+        </section>
+      </section>
+
+      <section class="response-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Step 3</div>
             <h2>See what CloudSight captured</h2>
-            <p class="muted">This view explains the end-to-end flow in plain language so clients can understand what happened without reading raw logs first.</p>
+            <p class="muted">Run status, CloudSight output, readback confirmation, and audit trail all stay here.</p>
           </div>
         </div>
 
@@ -74,42 +115,20 @@
           Choose a service on the left, then run it to watch the provider call, collector dispatch, and CloudSight readback.
         </div>
 
-        <div class="inspector-grid">
-          <section class="inspector-card">
-            <div class="section-head">
-              <div>
-                <div class="panel-label">Current test</div>
-                <h3 id="selectedScenarioTitle">Pick a service</h3>
-              </div>
-              <button id="runSelectedScenario" class="btn btn-primary">Run selected test</button>
+        <section class="response-card">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">CloudSight output</div>
+              <h3>Result details</h3>
             </div>
-            <p id="selectedScenarioSummary" class="muted"></p>
-            <div id="selectedScenarioBadges" class="badge-row"></div>
-          </section>
+          </div>
+          <div id="resultSummary" class="result-summary"></div>
+          <div id="resultNarrative" class="result-narrative"></div>
+          <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
+        </section>
 
-          <section class="inspector-card">
-            <div class="section-head">
-              <div>
-                <div class="panel-label">Capture flow</div>
-                <h3>How the signal moved</h3>
-              </div>
-            </div>
-            <ol id="flowSteps" class="flow-steps"></ol>
-          </section>
-
-          <section class="inspector-card inspector-card-wide">
-            <div class="section-head">
-              <div>
-                <div class="panel-label">CloudSight output</div>
-                <h3>Result details</h3>
-              </div>
-            </div>
-            <div id="resultSummary" class="result-summary"></div>
-            <div id="resultNarrative" class="result-narrative"></div>
-            <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
-          </section>
-
-          <section class="inspector-card">
+        <div class="response-lower-grid">
+          <section class="response-card">
             <div class="section-head">
               <div>
                 <div class="panel-label">CloudSight readback</div>
@@ -120,7 +139,7 @@
             <div id="overviewGrid" class="overview-grid"></div>
           </section>
 
-          <section class="inspector-card">
+          <section class="response-card">
             <div class="section-head">
               <div>
                 <div class="panel-label">Audit trail</div>

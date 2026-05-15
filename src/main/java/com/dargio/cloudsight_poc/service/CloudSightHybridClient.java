@@ -349,7 +349,7 @@ public class CloudSightHybridClient {
         );
 
         Map<String, Object> verification = verify
-                ? verifyScenario(session.token(), scenario)
+                ? verifyScenarioAfterDispatch(session.token(), scenario, dispatch)
                 : Map.of("status", "SKIPPED");
 
         return Map.of(
@@ -397,7 +397,7 @@ public class CloudSightHybridClient {
             );
 
             if (verify && session != null) {
-                verification = verifyScenario(session.token(), scenario);
+                verification = verifyScenarioAfterDispatch(session.token(), scenario, dispatch);
             }
 
             return Map.of(
@@ -654,13 +654,25 @@ public class CloudSightHybridClient {
                         "payload", body,
                         "attempt", attempt
                 ), response.getStatusCode().value(), response.getBody());
+                Map<String, Object> payload = response.getBody() == null ? Map.of() : response.getBody();
+                String payloadStatus = String.valueOf(payload.getOrDefault("status", "SUCCESS"));
+                if (!"SUCCESS".equalsIgnoreCase(payloadStatus)) {
+                    return Map.of(
+                            "provider", provider,
+                            "status", payloadStatus.toUpperCase(Locale.ROOT),
+                            "collectorUrl", url,
+                            "attempts", payload.getOrDefault("attempts", attempt),
+                            "error", payload.getOrDefault("error", "Collector returned a non-success status"),
+                            "result", payload
+                    );
+                }
                 return Map.of(
                         "provider", provider,
                         "status", "SUCCESS",
                         "collectorUrl", url,
                         "attempts", attempt,
-                        "result", response.getBody()
-                );
+                        "result", payload
+                    );
             } catch (RestClientException error) {
                 lastError = error;
                 record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
@@ -908,6 +920,17 @@ public class CloudSightHybridClient {
                 "summary", summary,
                 "latestLog", latest == null ? Map.of() : latest
         );
+    }
+
+    private Map<String, Object> verifyScenarioAfterDispatch(String token, DemoScenario scenario, Map<String, Object> dispatch) {
+        if (!"SUCCESS".equals(String.valueOf(dispatch.get("status")))) {
+            return Map.of(
+                    "status", "SKIPPED",
+                    "reason", "Collector dispatch did not succeed, so CloudSight readback was skipped."
+            );
+        }
+        sleep(1800L);
+        return verifyScenario(token, scenario);
     }
 
     private List<DemoScenario> scenarioDefinitions() {
