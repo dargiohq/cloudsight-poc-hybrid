@@ -52,6 +52,15 @@ function formatCount(value) {
   return Number.isFinite(number) ? number.toLocaleString() : String(value ?? "—");
 }
 
+function shortUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
+  } catch (error) {
+    return String(value ?? "—");
+  }
+}
+
 function summaryCards(overview) {
   const collectors = overview.cloudSight?.connections?.collectorSummary || {};
   return [
@@ -133,20 +142,29 @@ function renderSelectedProvider() {
   selectedProviderTitle.textContent = model.provider;
   selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof");
   selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
-  selectedProviderSummary.textContent = model.collector.liveProviderCalls || "Collector flow available.";
+  selectedProviderSummary.textContent = model.setup.configured
+    ? `This cloud is ready for a real provider proof and collector verification.`
+    : `Collector replay is ready now. Add live credentials later if you want a real provider call.`;
 
-  const metrics = [
-    ["Live proof", model.setup.selectedService || "Not configured"],
-    ["Modeled families", (model.catalog.serviceFamilies || []).length],
-    ["Collector URL", model.collector.collectorUrl]
-  ];
-
-  selectedProviderMeta.innerHTML = metrics.map(([label, value]) => `
-    <div class="meta-card">
-      <div class="label">${label}</div>
-      <div class="value">${escapeHtml(value)}</div>
+  const familyCount = (model.catalog.serviceFamilies || []).length;
+  selectedProviderMeta.innerHTML = `
+    <div class="provider-summary-card">
+      <div class="provider-summary-row">
+        <div class="provider-summary-label">Live proof</div>
+        <div class="provider-summary-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
+      </div>
+      <div class="provider-summary-row">
+        <div class="provider-summary-label">Modeled families</div>
+        <div class="provider-summary-value">${escapeHtml(String(familyCount))}</div>
+      </div>
+      <div class="provider-summary-row">
+        <div class="provider-summary-label">Collector endpoint</div>
+        <div class="provider-summary-value">
+          <a href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(model.collector.collectorUrl))}</a>
+        </div>
+      </div>
     </div>
-  `).join("");
+  `;
 
   liveScenarioCard.innerHTML = model.liveScenario ? `
     <div class="service-title-row">
