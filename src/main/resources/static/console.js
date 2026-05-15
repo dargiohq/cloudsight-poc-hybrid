@@ -1,23 +1,32 @@
 const overviewGrid = document.getElementById("overviewGrid");
-const collectorGrid = document.getElementById("collectorGrid");
-const liveSetupGrid = document.getElementById("liveSetupGrid");
-const catalogGrid = document.getElementById("catalogGrid");
-const scenarioGroups = document.getElementById("scenarioGroups");
+const providerGrid = document.getElementById("providerGrid");
+const serviceMatrix = document.getElementById("serviceMatrix");
+const stepGrid = document.getElementById("stepGrid");
 const resultPanel = document.getElementById("resultPanel");
 const auditPanel = document.getElementById("auditPanel");
 const heroStats = document.getElementById("heroStats");
+const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
 
 document.getElementById("refreshOverview").addEventListener("click", loadAll);
 document.getElementById("refreshAudit").addEventListener("click", loadAudit);
 document.getElementById("runRealtime").addEventListener("click", () => runRealtime());
 
 async function json(url, options) {
-  const response = await fetch(url, options);
+  const response = await fetch(`${API_BASE}${url}`, options);
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`${response.status} ${text || response.statusText}`);
   }
   return response.json();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function formatCount(value) {
@@ -32,15 +41,40 @@ function renderHeroStats(overview) {
 
   const cards = [
     ["Providers", overview.coverage?.providerCount ?? 4],
-    ["Scenarios", overview.coverage?.modeledScenarioCount ?? 0],
+    ["Modeled tests", overview.coverage?.modeledScenarioCount ?? 0],
     ["Healthy collectors", collectors.healthyCollectors ?? "—"],
-    ["Usage events", cloudSight.connections?.onboarding?.usageEvents ?? "—"],
+    ["Live-ready clouds", (overview.liveSetup || []).filter((item) => item.configured).length],
   ];
 
   heroStats.innerHTML = cards.map(([label, value]) => `
     <div class="card">
       <div class="label">${label}</div>
       <div class="value">${formatCount(value)}</div>
+    </div>
+  `).join("");
+}
+
+function renderSteps(overview) {
+  const recommendation = overview.coverage?.recommendedClientStory || "Deploy collectors first, then layer live credentials and billing connections.";
+  const realCloudSupport = overview.coverage?.realCloudCallSupport || "Credential-dependent real provider calls are optional.";
+  stepGrid.innerHTML = [
+    {
+      title: "1. Pick a cloud",
+      body: "Use the provider cards below. Each one shows whether live credentials are ready and what service is used for the proof."
+    },
+    {
+      title: "2. Run a proof",
+      body: "Start with a single live provider test, or expand the card to run individual modeled family checks through the collector."
+    },
+    {
+      title: "3. Read CloudSight",
+      body: `${recommendation} ${realCloudSupport}`
+    }
+  ].map((item) => `
+    <div class="step-card">
+      <div class="panel-label">Step</div>
+      <h3>${item.title}</h3>
+      <p>${item.body}</p>
     </div>
   `).join("");
 }
@@ -63,61 +97,128 @@ function renderOverview(overview) {
   `).join("");
 }
 
-function renderCollectors(overview) {
-  collectorGrid.innerHTML = (overview.collectors || []).map((collector) => `
-    <div class="collector-card">
-      <div class="tag">${collector.provider}</div>
-      <h3>${collector.executionMode}</h3>
-      <p class="muted">${collector.collectorUrl}</p>
-      <div class="pills">
-        ${(collector.serviceFamilies || []).map((family) => `<span class="pill">${family}</span>`).join("")}
-      </div>
-      <p class="muted" style="margin-top:12px">${collector.liveProviderCalls}</p>
-      <div class="status-inline ${collector.liveProviderReady ? "status-ok" : "status-warn"}">${collector.liveProviderReady ? "Live provider mode configured" : "Collector mode only until live credentials are set"}</div>
-    </div>
-  `).join("");
+function statusChip(configured, liveService) {
+  return configured
+    ? `<span class="status-chip status-ok">Live ready: ${escapeHtml(liveService)}</span>`
+    : `<span class="status-chip status-warn">Collector-ready only</span>`;
 }
 
-function renderLiveSetup(setups) {
-  liveSetupGrid.innerHTML = (setups || []).map((setup) => `
-    <div class="wizard-card">
-      <div class="wizard-head">
+function buildProviderModels({ overview, scenarios, liveSetup, catalogs }) {
+  return (overview.collectors || []).map((collector) => {
+    const provider = collector.provider;
+    const setup = (liveSetup || []).find((item) => item.provider === provider) || {};
+    const catalog = (catalogs || []).find((item) => item.provider === provider) || {};
+    const providerScenarios = (scenarios || []).filter((item) => item.provider === provider);
+    const liveScenario = providerScenarios.find((item) => item.executionMode === "live-provider-call") || null;
+    const collectorScenarios = providerScenarios.filter((item) => item.executionMode !== "live-provider-call");
+    return {
+      provider,
+      collector,
+      setup,
+      catalog,
+      liveScenario,
+      collectorScenarios,
+      readyFamilies: (catalog.serviceFamilies || []).filter((family) => family.status === "collector-ready"),
+      expandedFamilies: (catalog.serviceFamilies || []).filter((family) => family.status !== "collector-ready")
+    };
+  });
+}
+
+function renderProviders(models) {
+  providerGrid.innerHTML = models.map((model) => `
+    <article class="provider-card">
+      <div class="provider-head">
         <div>
-          <div class="tag">${setup.provider}</div>
-          <h3>${setup.selectedService}</h3>
+          <div class="tag">${model.provider}</div>
+          <h3>${escapeHtml(model.setup.selectedService || "Collector-first provider flow")}</h3>
         </div>
-        <span class="${setup.configured ? "status-ok" : "status-warn"}">${setup.configured ? "Configured" : "Needs secrets"}</span>
+        ${statusChip(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof")}
       </div>
-      <div class="meta-list">
-        ${(setup.requirements || []).map((item) => `<span class="pill ${item.configured ? "pill-ok" : "pill-warn"}">${item.env}</span>`).join("")}
+
+      <div class="provider-copy">
+        <p>${escapeHtml(model.collector.liveProviderCalls || "Collector flow available.")}</p>
+        <a class="provider-link" href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(model.collector.collectorUrl)}</a>
       </div>
-      <div class="wizard-copy">
-        <div>
-          <div class="panel-label">Setup steps</div>
-          <ul>
-            ${(setup.steps || []).map((step) => `<li>${step}</li>`).join("")}
-          </ul>
+
+      <div class="provider-metrics">
+        <div class="mini-stat">
+          <div class="label">Modeled families</div>
+          <div class="value">${formatCount((model.catalog.serviceFamilies || []).length)}</div>
         </div>
-        <div>
-          <div class="panel-label">Live resources</div>
-          <pre class="inline-code">${JSON.stringify(setup.resources || {}, null, 2)}</pre>
+        <div class="mini-stat">
+          <div class="label">Collector tests</div>
+          <div class="value">${formatCount(model.collectorScenarios.length)}</div>
+        </div>
+        <div class="mini-stat">
+          <div class="label">Status</div>
+          <div class="value">${model.setup.configured ? "Ready" : "Setup"}</div>
         </div>
       </div>
-      <div class="scenario-actions">
-        <button class="btn btn-primary" data-live-provider="${setup.provider}" ${setup.configured ? "" : "disabled"}>${setup.configured ? "Run live + verify" : "Configure secrets first"}</button>
+
+      <div class="provider-actions">
+        <button class="btn btn-primary" data-provider-live="${model.provider}" ${model.setup.configured ? "" : "disabled"}>${model.setup.configured ? "Run live + verify" : "Configure live secrets"}</button>
+        <button class="btn btn-ghost" data-provider-sample="${model.provider}" ${model.collectorScenarios.length ? "" : "disabled"}>Run collector sample</button>
       </div>
-    </div>
+
+      <details>
+        <summary>Show modeled families and advanced tests</summary>
+        <div class="detail-grid">
+          <div class="detail-stack">
+            <div>
+              <div class="panel-label">Collector-ready families</div>
+              <div class="family-list">
+                ${(model.readyFamilies || []).map((family) => `<span class="pill ${family.selectedLiveCall ? "pill-ok" : ""}">${escapeHtml(family.name)}</span>`).join("")}
+              </div>
+            </div>
+            ${model.expandedFamilies.length ? `
+            <div>
+              <div class="panel-label">Catalog-expanded next</div>
+              <div class="family-list">
+                ${model.expandedFamilies.map((family) => `<span class="pill pill-warn">${escapeHtml(family.name)}</span>`).join("")}
+              </div>
+            </div>` : ""}
+            <div>
+              <div class="panel-label">Individual modeled tests</div>
+              <div class="detail-actions">
+                ${model.collectorScenarios.map((scenario) => `
+                  <button class="btn btn-secondary" data-scenario="${escapeHtml(scenario.id)}">${escapeHtml(scenario.serviceFamily)}</button>
+                `).join("")}
+              </div>
+            </div>
+          </div>
+          <div class="detail-stack">
+            <div>
+              <div class="panel-label">Setup requirements</div>
+              <div class="family-list">
+                ${(model.setup.requirements || []).map((item) => `<span class="pill ${item.configured ? "pill-ok" : "pill-warn"}">${escapeHtml(item.env)}</span>`).join("")}
+              </div>
+            </div>
+            <div>
+              <div class="panel-label">Live resources</div>
+              <pre class="inline-code">${escapeHtml(JSON.stringify(model.setup.resources || {}, null, 2))}</pre>
+            </div>
+            <div>
+              <div class="panel-label">Operator notes</div>
+              <ul>
+                ${(model.setup.steps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </details>
+    </article>
   `).join("");
 
-  liveSetupGrid.querySelectorAll("[data-live-provider]").forEach((button) => {
+  providerGrid.querySelectorAll("[data-provider-live]").forEach((button) => {
     if (button.disabled) {
       return;
     }
     button.addEventListener("click", async () => {
+      const provider = button.dataset.providerLive;
       button.disabled = true;
-      button.textContent = "Running live call…";
+      button.textContent = "Running live…";
       try {
-        const result = await json(`/demo/live/providers/${button.dataset.liveProvider}/run?verify=true`, { method: "POST" });
+        const result = await json(`/demo/live/providers/${provider}/run?verify=true`, { method: "POST" });
         resultPanel.textContent = JSON.stringify(result, null, 2);
         await loadAll();
       } catch (error) {
@@ -128,86 +229,43 @@ function renderLiveSetup(setups) {
       }
     });
   });
-}
 
-function renderCatalogs(catalogs) {
-  catalogGrid.innerHTML = (catalogs || []).map((catalog) => `
-    <div class="catalog-card">
-      <div class="wizard-head">
-        <div>
-          <div class="tag">${catalog.provider}</div>
-          <h3>${(catalog.serviceFamilies || []).length} service families</h3>
-        </div>
-      </div>
-      <div class="catalog-list">
-        ${(catalog.serviceFamilies || []).map((family) => `
-          <div class="catalog-item">
-            <div>
-              <strong>${family.name}</strong>
-              <div class="muted">${family.selectedLiveCall ? "Selected for live credential-backed demo" : "Catalog-expanded family"}</div>
-            </div>
-            <div class="meta-list">
-              <span class="pill">${family.status}</span>
-              ${family.writeVerified ? '<span class="pill pill-ok">write-verified</span>' : ""}
-            </div>
-          </div>
-        `).join("")}
-      </div>
-    </div>
-  `).join("");
-}
-
-function groupByProvider(scenarios) {
-  return scenarios.reduce((acc, scenario) => {
-    acc[scenario.provider] = acc[scenario.provider] || [];
-    acc[scenario.provider].push(scenario);
-    return acc;
-  }, {});
-}
-
-function renderScenarios(scenarios) {
-  const groups = groupByProvider(scenarios);
-  scenarioGroups.innerHTML = Object.entries(groups).map(([provider, items]) => `
-    <div class="scenario-group">
-      <div class="scenario-group-head">
-        <div>
-          <div class="panel-label">${provider}</div>
-          <h3>${items.length} scenario${items.length === 1 ? "" : "s"} ready</h3>
-        </div>
-      </div>
-      <div class="scenario-grid">
-        ${items.map((scenario) => `
-          <div class="scenario-card">
-            <div>
-              <div class="tag">${scenario.serviceFamily}</div>
-              <h3>${scenario.title}</h3>
-              <p class="muted">${scenario.realCloudNote}</p>
-            </div>
-            <div class="meta-list">
-              <span class="pill">${scenario.primaryEndpoint}</span>
-              <span class="pill">${scenario.signalType}</span>
-              <span class="pill">${scenario.executionMode}</span>
-              ${scenario.realCloudReady ? '<span class="pill pill-ok">live-ready</span>' : ""}
-            </div>
-            <div class="scenario-actions">
-              <button class="btn btn-primary" data-scenario="${scenario.id}" ${scenario.executionMode === "live-provider-call" && !scenario.realCloudReady ? "disabled" : ""}>${scenario.executionMode === "live-provider-call" ? (scenario.realCloudReady ? "Run live + verify" : "Configure secrets first") : "Send + verify"}</button>
-            </div>
-          </div>
-        `).join("")}
-      </div>
-    </div>
-  `).join("");
-
-  scenarioGroups.querySelectorAll("[data-scenario]").forEach((button) => {
+  providerGrid.querySelectorAll("[data-provider-sample]").forEach((button) => {
+    if (button.disabled) {
+      return;
+    }
     button.addEventListener("click", async () => {
-      const scenario = scenarios.find((item) => item.id === button.dataset.scenario);
-      const defaultLabel = scenario?.executionMode === "live-provider-call" ? "Run live + verify" : "Send + verify";
+      const provider = button.dataset.providerSample;
+      const model = models.find((item) => item.provider === provider);
+      const scenario = model?.collectorScenarios?.[0];
+      if (!scenario) {
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Running sample…";
+      try {
+        const result = await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" });
+        resultPanel.textContent = JSON.stringify(result, null, 2);
+        await loadAll();
+      } catch (error) {
+        resultPanel.textContent = error.stack || String(error);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Run collector sample";
+      }
+    });
+  });
+
+  providerGrid.querySelectorAll("[data-scenario]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const scenario = models.flatMap((item) => item.collectorScenarios).find((item) => item.id === button.dataset.scenario);
+      const defaultLabel = scenario?.serviceFamily || "Run test";
       button.disabled = true;
       button.textContent = "Running…";
       try {
         const result = await json(`/demo/scenarios/${button.dataset.scenario}/run?verify=true`, { method: "POST" });
         resultPanel.textContent = JSON.stringify(result, null, 2);
-        await loadAudit();
+        await loadAll();
       } catch (error) {
         resultPanel.textContent = error.stack || String(error);
       } finally {
@@ -218,10 +276,47 @@ function renderScenarios(scenarios) {
   });
 }
 
+function renderServiceMatrix(models) {
+  serviceMatrix.innerHTML = `
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Live proof service</th>
+        <th>Collector-ready families</th>
+        <th>Catalog-expanded next</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${models.map((model) => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(model.provider)}</strong>
+            <span class="${model.setup.configured ? "status-ok" : "status-warn"}">${model.setup.configured ? "Live-ready" : "Collector-only today"}</span>
+          </td>
+          <td>
+            <strong>${escapeHtml(model.setup.selectedService || "Not selected")}</strong>
+            <span class="muted">${escapeHtml(model.collector.executionMode || "")}</span>
+          </td>
+          <td>
+            <div class="family-list">
+              ${(model.readyFamilies || []).map((family) => `<span class="pill ${family.writeVerified ? "pill-ok" : ""}">${escapeHtml(family.name)}</span>`).join("")}
+            </div>
+          </td>
+          <td>
+            <div class="family-list">
+              ${(model.expandedFamilies || []).map((family) => `<span class="pill pill-warn">${escapeHtml(family.name)}</span>`).join("")}
+            </div>
+          </td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+}
+
 async function runRealtime() {
   const button = document.getElementById("runRealtime");
   button.disabled = true;
-  button.textContent = "Running realtime flow…";
+  button.textContent = "Running collectors…";
   try {
     const result = await json("/demo/bootstrap/realtime", { method: "POST" });
     resultPanel.textContent = JSON.stringify(result, null, 2);
@@ -230,7 +325,7 @@ async function runRealtime() {
     resultPanel.textContent = error.stack || String(error);
   } finally {
     button.disabled = false;
-    button.textContent = "Run Full Realtime Flow";
+    button.textContent = "Run all collectors";
   }
 }
 
@@ -263,12 +358,12 @@ async function loadAll() {
     json("/demo/live/setup"),
     json("/demo/catalogs")
   ]);
+  const models = buildProviderModels({ overview, scenarios, liveSetup, catalogs });
   renderHeroStats(overview);
+  renderSteps(overview);
   renderOverview(overview);
-  renderCollectors(overview);
-  renderLiveSetup(liveSetup);
-  renderCatalogs(catalogs);
-  renderScenarios(scenarios);
+  renderProviders(models);
+  renderServiceMatrix(models);
   await loadAudit();
 }
 

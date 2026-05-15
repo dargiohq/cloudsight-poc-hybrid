@@ -11,18 +11,19 @@
     <header class="hero">
       <div class="hero-copy">
         <div class="eyebrow">Dargio CloudSight POC</div>
-        <h1>Collector-first multi-cloud demo console</h1>
+        <h1>Simple multi-cloud test console</h1>
         <p class="hero-text">
-          Run provider-native scenarios through live collectors, verify the matching CloudSight entry,
-          and show clients how AWS, GCP, Azure, and OpenAI land in one cost-operations workspace.
+          Test AWS, GCP, Azure, and OpenAI in one place. Run one live proof per provider, inspect modeled
+          service families, and verify how each cloud lands inside CloudSight.
         </p>
         <div class="hero-actions">
-          <button id="runRealtime" class="btn btn-primary">Run Full Realtime Flow</button>
+          <button id="runRealtime" class="btn btn-primary">Run all collectors</button>
+          <button id="refreshOverview" class="btn btn-secondary">Refresh console</button>
           <a class="btn btn-secondary" href="https://dargio-cloudsight-ui.onrender.com/" target="_blank" rel="noreferrer">Open CloudSight</a>
         </div>
       </div>
       <div class="hero-panel" id="heroPanel">
-        <div class="panel-label">Live readiness</div>
+        <div class="panel-label">At a glance</div>
         <div class="status-grid" id="heroStats"></div>
       </div>
     </header>
@@ -31,65 +32,56 @@
       <section class="panel panel-large">
         <div class="panel-head">
           <div>
-            <div class="panel-label">Overview</div>
-            <h2>What this POC proves</h2>
+            <div class="panel-label">How to use this</div>
+            <h2>Three simple steps</h2>
           </div>
-          <button id="refreshOverview" class="btn btn-ghost">Refresh</button>
         </div>
-        <div class="overview-grid" id="overviewGrid"></div>
+        <div class="step-grid" id="stepGrid"></div>
       </section>
 
       <section class="panel panel-large">
         <div class="panel-head">
           <div>
-            <div class="panel-label">Coverage</div>
-            <h2>Modeled providers and families</h2>
+            <div class="panel-label">Cloud providers</div>
+            <h2>Pick a provider and run a test</h2>
+            <p class="muted">Each card gives you the fastest path to prove the provider is wired, then lets you expand into individual modeled families.</p>
           </div>
         </div>
-        <div id="collectorGrid" class="collector-grid"></div>
+        <div id="providerGrid" class="provider-grid"></div>
       </section>
 
       <section class="panel panel-large">
         <div class="panel-head">
           <div>
-            <div class="panel-label">Live credentials</div>
-            <h2>Per-provider setup wizards</h2>
-            <p class="muted">Configure one safe real service per provider, then run the live call and verify the matching CloudSight entry.</p>
+            <div class="panel-label">Coverage matrix</div>
+            <h2>What is modeled per provider</h2>
+            <p class="muted">Use this as the simple client-facing coverage view: live proof service, modeled families, and next-surface catalog expansion.</p>
           </div>
         </div>
-        <div id="liveSetupGrid" class="wizard-grid"></div>
+        <div class="matrix-wrap">
+          <table class="coverage-table" id="serviceMatrix"></table>
+        </div>
       </section>
 
       <section class="panel panel-large">
         <div class="panel-head">
           <div>
-            <div class="panel-label">Catalogs</div>
-            <h2>Expanded provider catalog view</h2>
-            <p class="muted">Modeled today, live-call selected where possible, and broader service families ready for next expansion.</p>
+            <div class="panel-label">Results</div>
+            <h2>Latest run and CloudSight response</h2>
+            <p class="muted">Run provider tests from the cards above. This panel shows the exact live call, collector dispatch, and verification payload.</p>
           </div>
         </div>
-        <div id="catalogGrid" class="catalog-grid"></div>
-      </section>
-
-      <section class="panel panel-large">
-        <div class="panel-head">
-          <div>
-            <div class="panel-label">Scenarios</div>
-            <h2>Manual send and verify</h2>
-            <p class="muted">Each scenario sends a safe provider-native signal through a live collector, then checks CloudSight for the matching endpoint.</p>
-          </div>
-        </div>
-        <div id="scenarioGroups" class="scenario-groups"></div>
+        <pre id="resultPanel" class="result-panel">Pick a provider card above and run a test.</pre>
       </section>
 
       <section class="panel panel-half">
         <div class="panel-head">
           <div>
-            <div class="panel-label">Latest run</div>
-            <h2>Dispatch and verification output</h2>
+            <div class="panel-label">Workspace snapshot</div>
+            <h2>What CloudSight currently sees</h2>
           </div>
         </div>
-        <pre id="resultPanel" class="result-panel">Select a scenario or run the full realtime flow.</pre>
+        <div id="overviewGrid" class="overview-grid"></div>
       </section>
 
       <section class="panel panel-half">
