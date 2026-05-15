@@ -49,6 +49,8 @@ public class CloudSightHybridClient {
     private static final int READ_TIMEOUT_MS = 60_000;
     private static final long COLLECTOR_DISPATCH_DELAY_MS = 2_500L;
     private static final long COLLECTOR_PROVIDER_DELAY_MS = 4_000L;
+    private static final int COLLECTOR_PROXY_ATTEMPTS = 6;
+    private static final int CLOUDSIGHT_VERIFY_ATTEMPTS = 8;
     private static final DateTimeFormatter AWS_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(java.time.ZoneOffset.UTC);
     private static final DateTimeFormatter AWS_DATE = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(java.time.ZoneOffset.UTC);
     private static final String LIVE_AWS_PROVIDER = "AWS";
@@ -204,7 +206,6 @@ public class CloudSightHybridClient {
             cloudSight.put("connections", getJson(baseUrl + "/api/connections", session.token()));
             cloudSight.put("dashboardOverview", getJson(baseUrl + "/api/dashboard/overview?days=30", session.token()));
             cloudSight.put("usageSummary", getJson(baseUrl + "/api/usage/summary?days=30", session.token()));
-            cloudSight.put("reportStatement", getJson(baseUrl + "/api/reports/statement?days=30", session.token()));
             cachedCloudSightSnapshot = new LinkedHashMap<>(cloudSight);
             cachedCloudSightSnapshotAt = Instant.now();
             overview.put("cloudSight", cloudSight);
@@ -657,7 +658,7 @@ public class CloudSightHybridClient {
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Object> entity = new HttpEntity<>(body, headers);
         RestClientException lastError = null;
-        for (int attempt = 1; attempt <= 4; attempt++) {
+        for (int attempt = 1; attempt <= COLLECTOR_PROXY_ATTEMPTS; attempt++) {
             try {
                 ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
                 record("hybrid-collector-realtime", "POST", url, Map.of("Content-Type", "application/json"), Map.of(
@@ -668,6 +669,10 @@ public class CloudSightHybridClient {
                 Map<String, Object> payload = response.getBody() == null ? Map.of() : response.getBody();
                 String payloadStatus = String.valueOf(payload.getOrDefault("status", "SUCCESS"));
                 if (!"SUCCESS".equalsIgnoreCase(payloadStatus)) {
+                    if (isRetryableCollectorStatus(payloadStatus) && attempt < COLLECTOR_PROXY_ATTEMPTS) {
+                        sleep(attempt * 3500L);
+                        continue;
+                    }
                     return Map.of(
                             "provider", provider,
                             "status", payloadStatus.toUpperCase(Locale.ROOT),
@@ -691,7 +696,7 @@ public class CloudSightHybridClient {
                         "payload", body,
                         "attempt", attempt
                 ), 0, Map.of("error", error.getMessage()));
-                if (!isRetryableCollectorError(error) || attempt == 6) {
+                if (!isRetryableCollectorError(error) || attempt == COLLECTOR_PROXY_ATTEMPTS) {
                     return Map.of(
                             "provider", provider,
                             "status", isRetryableCollectorError(error) ? "RATE_LIMITED" : "ERROR",
@@ -707,6 +712,7 @@ public class CloudSightHybridClient {
                 "provider", provider,
                 "status", "ERROR",
                 "collectorUrl", url,
+                "attempts", COLLECTOR_PROXY_ATTEMPTS,
                 "error", lastError == null ? "Collector dispatch failed" : lastError.getMessage()
         );
     }
@@ -931,6 +937,7 @@ public class CloudSightHybridClient {
             latest = list.get(0);
             matchedLogs = list;
         }
+        cacheReadbackSnapshot(summary);
         return Map.of(
                 "status", latest == null ? "NOT_FOUND" : "SUCCESS",
                 "search", scenario.primaryEndpoint(),
@@ -948,16 +955,16 @@ public class CloudSightHybridClient {
             );
         }
         RestClientException lastError = null;
-        for (int attempt = 1; attempt <= 4; attempt++) {
+        for (int attempt = 1; attempt <= CLOUDSIGHT_VERIFY_ATTEMPTS; attempt++) {
             sleep(1500L * attempt);
             try {
                 Map<String, Object> verification = verifyScenario(token, scenario);
-                if ("SUCCESS".equals(String.valueOf(verification.get("status"))) || attempt == 4) {
+                if ("SUCCESS".equals(String.valueOf(verification.get("status"))) || attempt == CLOUDSIGHT_VERIFY_ATTEMPTS) {
                     return verification;
                 }
             } catch (RestClientException error) {
                 lastError = error;
-                if (attempt == 4) {
+                if (attempt == CLOUDSIGHT_VERIFY_ATTEMPTS) {
                     return Map.of(
                             "status", "RATE_LIMITED",
                             "message", error.getMessage()
@@ -1676,6 +1683,29 @@ public class CloudSightHybridClient {
                 || normalized.contains("504")
                 || normalized.contains("BAD GATEWAY")
                 || normalized.contains("TIMED OUT");
+    }
+
+    private boolean isRetryableCollectorStatus(String status) {
+        String normalized = String.valueOf(status).toUpperCase(Locale.ROOT);
+        return normalized.contains("RATE_LIMIT")
+                || normalized.contains("RETRY")
+                || normalized.contains("THROTTL");
+    }
+
+    private void cacheReadbackSnapshot(Map<String, Object> usageSummary) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("auth", "CONNECTED");
+        snapshot.put("readbackMode", "LIVE");
+        snapshot.put("usageSummary", usageSummary);
+        snapshot.put("dashboardOverview", Map.of(
+                "currentSpend", usageSummary.getOrDefault("totalCost", "—"),
+                "totalRequests", usageSummary.getOrDefault("totalRequests", "—")
+        ));
+        if (cachedCloudSightSnapshot != null && cachedCloudSightSnapshot.get("connections") != null) {
+            snapshot.put("connections", cachedCloudSightSnapshot.get("connections"));
+        }
+        cachedCloudSightSnapshot = snapshot;
+        cachedCloudSightSnapshotAt = Instant.now();
     }
 
     private void sleep(long millis) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Hybrid POC Console</title>
-  <link rel="stylesheet" href="./console.css?v=3">
+  <link rel="stylesheet" href="./console.css?v=4">
 </head>
 <body>
   <div class="shell">
@@ -118,18 +118,7 @@
         </section>
 
         <div class="response-lower-grid">
-          <section class="response-card">
-            <div class="section-head">
-              <div>
-                <div class="panel-label">CloudSight readback</div>
-                <h3>What the product can confirm</h3>
-              </div>
-            </div>
-            <div id="readbackNote" class="readback-note"></div>
-            <div id="overviewGrid" class="overview-grid"></div>
-          </section>
-
-          <section class="response-card">
+          <section class="response-card usage-card">
             <div class="section-head">
               <div>
                 <div class="panel-label">Captured usage rows</div>
@@ -152,6 +141,17 @@
               </table>
             </div>
           </section>
+
+          <section class="response-card readback-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">CloudSight readback</div>
+                <h3>What the product can confirm</h3>
+              </div>
+            </div>
+            <div id="readbackNote" class="readback-note"></div>
+            <div id="overviewGrid" class="overview-grid"></div>
+          </section>
         </div>
 
         <section class="response-card">
@@ -169,6 +169,6 @@
     </main>
   </div>
 
-  <script src="./console.js?v=3" defer></script>
+  <script src="./console.js?v=4" defer></script>
 </body>
 </html>

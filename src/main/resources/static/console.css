@@ -385,8 +385,16 @@ h3 {
 
 .response-lower-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
   gap: 14px;
+}
+
+.usage-card {
+  min-width: 0;
+}
+
+.readback-card {
+  min-width: 0;
 }
 
 .table-meta {
@@ -535,7 +543,7 @@ h3 {
 .usage-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 680px;
+  min-width: 760px;
 }
 
 .usage-table th,

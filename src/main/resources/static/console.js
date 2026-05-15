@@ -385,6 +385,53 @@ function renderUsageTable(result, scenario) {
   }).join("");
 }
 
+function renderRunReadback(result, scenario) {
+  const verification = result?.verification || {};
+  const latestLog = verification.latestLog || {};
+  const hasLatestLog = latestLog && Object.keys(latestLog).length > 0;
+  const liveStatus = result?.liveCall?.status || "SKIPPED";
+  const dispatchStatus = result?.dispatch?.status || result?.status || "UNKNOWN";
+  const verificationStatus = verification.status || "SKIPPED";
+
+  let title = "Product readback deferred";
+  let note = "CloudSight has not confirmed a matching product row yet.";
+
+  if (verificationStatus === "SUCCESS" && hasLatestLog) {
+    title = "Current run confirmed in CloudSight";
+    note = `CloudSight returned a matching ${scenario.primaryEndpoint} row for this run.`;
+  } else if (dispatchStatus === "SUCCESS") {
+    title = "Collector delivered the signal";
+    note = "CloudSight accepted the collector dispatch. Product readback is still polling for the newest row.";
+  } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
+    title = "Collector dispatch throttled";
+    note = "The real provider call succeeded, but the collector hit rate limiting before CloudSight could confirm the row.";
+  } else if (liveStatus === "SUCCESS" && dispatchStatus === "ERROR") {
+    title = "Collector dispatch failed";
+    note = "The real provider call succeeded, but the collector could not deliver the normalized signal to CloudSight.";
+  }
+
+  readbackNote.innerHTML = `
+    <div class="readback-pill ${verificationStatus === "SUCCESS" ? "ok" : dispatchStatus === "SUCCESS" ? "warn" : "neutral"}">
+      ${escapeHtml(title)}
+    </div>
+    <p>${escapeHtml(note)}</p>
+  `;
+
+  const cards = [
+    ["Readback state", verificationStatus === "SUCCESS" ? "Live" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
+    ["Matched endpoint", hasLatestLog ? (latestLog.inputEndpoint || scenario.primaryEndpoint || "—") : (scenario.primaryEndpoint || "—")],
+    ["Latest row cost", hasLatestLog ? String(latestLog.calculatedCost ?? latestLog.estimatedCost ?? "—") : "—"],
+    ["Latest row time", hasLatestLog ? String(latestLog.timestamp || latestLog.createdAt || "—") : "—"]
+  ];
+
+  overviewGrid.innerHTML = cards.map(([label, value]) => `
+    <div class="meta-card">
+      <div class="label">${label}</div>
+      <div class="value">${escapeHtml(typeof value === "number" ? formatCount(value) : value)}</div>
+    </div>
+  `).join("");
+}
+
 function auditStage(event) {
   if ((event.integrationOption || "").includes("collector")) {
     return "Collector";
@@ -438,6 +485,7 @@ async function runSelected() {
     resultPanel.textContent = JSON.stringify(result, null, 2);
     await loadAudit();
     await refreshWorkspaceSnapshot();
+    renderRunReadback(result, scenario);
     const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
     setBanner(
       dispatchStatus === "SUCCESS"
@@ -480,6 +528,7 @@ async function runRealtime() {
     if (scenario) {
       renderFlowExplanation(scenario, result);
       renderUsageTable(result, scenario);
+      renderRunReadback(result, scenario);
     }
     await loadAll();
     setBanner(
@@ -527,13 +576,16 @@ function renderOverviewCards(overview) {
 }
 
 function renderAudit(events) {
-  const recent = (events || []).slice(0, 24);
+  const recent = (events || []).slice(0, 36);
   const runId = state.lastRun?.runId;
   const matched = runId ? recent.filter((event) => event.runId === runId) : [];
+  const ordered = runId
+    ? [...matched, ...recent.filter((event) => event.runId !== runId)]
+    : recent;
   auditMatchSummary.textContent = runId
     ? `${matched.length} audit event${matched.length === 1 ? "" : "s"} from the current run are highlighted below.`
     : "Recent calls will appear here. Matching events from the current run are highlighted.";
-  auditPanel.innerHTML = recent.map((event) => {
+  auditPanel.innerHTML = ordered.map((event) => {
     const status = Number(event.responseStatus || 0);
     const statusClass = status >= 400 ? "status-error" : status >= 300 ? "status-warn" : "status-ok";
     const isMatch = runId && event.runId === runId;
