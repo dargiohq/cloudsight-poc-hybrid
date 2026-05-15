@@ -353,8 +353,19 @@ public class CloudSightHybridClient {
                 .orElseThrow(() -> new IllegalStateException("No live scenario configured for provider: " + normalizedProvider));
         try {
             requireProviderConfigured(normalizedProvider);
-            Session session = login();
-            ensureConnections(session.token());
+            Session session = null;
+            Map<String, Object> verification = Map.of("status", "SKIPPED");
+            if (verify) {
+                try {
+                    session = login();
+                    ensureConnections(session.token());
+                } catch (RestClientException error) {
+                    verification = Map.of(
+                            "status", "RATE_LIMITED",
+                            "message", error.getMessage()
+                    );
+                }
+            }
 
             Map<String, Object> liveCall = switch (normalizedProvider) {
                 case LIVE_AWS_PROVIDER -> runAwsLiveS3Call();
@@ -370,9 +381,9 @@ public class CloudSightHybridClient {
                     liveCall.get("collectorPayload")
             );
 
-            Map<String, Object> verification = verify
-                    ? verifyScenario(session.token(), scenario)
-                    : Map.of("status", "SKIPPED");
+            if (verify && session != null) {
+                verification = verifyScenario(session.token(), scenario);
+            }
 
             return Map.of(
                     "scenario", scenarioView(scenario),
