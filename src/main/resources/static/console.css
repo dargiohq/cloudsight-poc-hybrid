@@ -137,8 +137,10 @@ h1 {
 }
 
 .panel {
+  grid-column: span 12;
   border-radius: 28px;
   padding: 24px;
+  min-width: 0;
 }
 .panel-large { grid-column: span 12; }
 .panel-half { grid-column: span 6; }
@@ -173,10 +175,20 @@ h1 {
 
 .collector-card {
   padding: 18px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
 }
 .collector-card h3, .scenario-card h3, .wizard-card h3, .catalog-card h3 {
   margin: 0 0 10px;
   font-size: 1.15rem;
+}
+
+.collector-card p {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .wizard-card, .catalog-card {
@@ -245,15 +257,19 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .pill {
+  display: inline-flex;
+  align-items: center;
   padding: 7px 10px;
   border-radius: 999px;
   background: rgba(103, 163, 255, 0.12);
   color: var(--cyan);
   font-size: 0.78rem;
   font-weight: 700;
+  min-width: 0;
 }
 
 .pill-ok {

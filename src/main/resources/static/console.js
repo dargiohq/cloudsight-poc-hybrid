@@ -200,6 +200,8 @@ function renderScenarios(scenarios) {
 
   scenarioGroups.querySelectorAll("[data-scenario]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const scenario = scenarios.find((item) => item.id === button.dataset.scenario);
+      const defaultLabel = scenario?.executionMode === "live-provider-call" ? "Run live + verify" : "Send + verify";
       button.disabled = true;
       button.textContent = "Running…";
       try {
@@ -210,7 +212,7 @@ function renderScenarios(scenarios) {
         resultPanel.textContent = error.stack || String(error);
       } finally {
         button.disabled = false;
-        button.textContent = "Send + verify";
+        button.textContent = defaultLabel;
       }
     });
   });
