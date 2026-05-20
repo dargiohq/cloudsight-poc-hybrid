@@ -314,9 +314,12 @@ function renderResultNarrative(result, scenario) {
   const liveStatus = result.liveCall?.status || "SKIPPED";
   const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
   const verificationStatus = result.verification?.status || "SKIPPED";
+  const deliveryMode = result.dispatch?.result?.deliveryMode || "";
   let message = "The run completed.";
 
-  if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
+  if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && deliveryMode === "COLLECTOR_USAGE_RELAY") {
+    message = "The real provider call succeeded and the collector relayed the normalized row into CloudSight successfully.";
+  } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
     message = "The real provider call succeeded and the collector delivered the signal to CloudSight successfully.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
     message = "The real provider call succeeded, but CloudSight throttled the collector dispatch. Wait a few seconds and retry.";
@@ -366,7 +369,9 @@ function renderUsageTable(result, scenario) {
     return;
   }
 
-  usageTableMeta.textContent = `Showing the latest ${rows.length} CloudSight row${rows.length === 1 ? "" : "s"} matching ${scenario.primaryEndpoint}. The newest match is highlighted.`;
+  usageTableMeta.textContent = result?.verification?.fallback
+    ? `Showing the latest ${rows.length} captured row${rows.length === 1 ? "" : "s"} confirmed by the collector relay for ${scenario.primaryEndpoint}.`
+    : `Showing the latest ${rows.length} CloudSight row${rows.length === 1 ? "" : "s"} matching ${scenario.primaryEndpoint}. The newest match is highlighted.`;
   usageTableBody.innerHTML = rows.map((row, index) => {
     const primary = row.inputEndpoint || row.primaryEndpoint || "—";
     const secondary = row.outputEndpoint || row.secondaryEndpoint || "—";
@@ -397,8 +402,10 @@ function renderRunReadback(result, scenario) {
   let note = "CloudSight has not confirmed a matching product row yet.";
 
   if (verificationStatus === "SUCCESS" && hasLatestLog) {
-    title = "Current run confirmed in CloudSight";
-    note = `CloudSight returned a matching ${scenario.primaryEndpoint} row for this run.`;
+    title = verification.fallback ? "Collector relay confirmed capture" : "Current run confirmed in CloudSight";
+    note = verification.fallback
+      ? `The collector relay returned a stored ${scenario.primaryEndpoint} row for this run.`
+      : `CloudSight returned a matching ${scenario.primaryEndpoint} row for this run.`;
   } else if (dispatchStatus === "SUCCESS") {
     title = "Collector delivered the signal";
     note = "CloudSight accepted the collector dispatch. Product readback is still polling for the newest row.";
