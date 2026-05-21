@@ -758,75 +758,7 @@ public class CloudSightHybridClient {
     }
 
     private Map<String, Object> ensureCollectorRelayCapture(DemoScenario scenario, Map<String, Object> dispatch) {
-        if ("SUCCESS".equals(String.valueOf(dispatch.get("status")))) {
-            return dispatch;
-        }
-
-        String apiKey = effectiveWorkspaceApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            return dispatch;
-        }
-
-        UsageRequest body = new UsageRequest();
-        body.setService(scenario.provider());
-        body.setInputEndpoint(scenario.primaryEndpoint());
-        body.setOutputEndpoint(scenario.secondaryEndpoint());
-        body.setInputUnits(1);
-        body.setOutputUnits(1);
-        body.setTimestamp(Instant.now());
-
-        Map<String, Object> stored = postUsage(writeBaseUrl + "/api/usage", apiKey, body);
-        if (!"SUCCESS".equals(String.valueOf(stored.get("status")))) {
-            return dispatch;
-        }
-
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("timestamp", valueOrDefault(stored, "timestamp", body.getTimestamp().toString()));
-        row.put("service", scenario.provider());
-        row.put("inputEndpoint", scenario.primaryEndpoint());
-        row.put("outputEndpoint", scenario.secondaryEndpoint());
-        row.put("inputUnits", body.getInputUnits());
-        row.put("outputUnits", body.getOutputUnits());
-        row.put("calculatedCost", valueOrDefault(stored, "calculatedCost", "—"));
-        row.put("collectorName", scenario.collectorUrl());
-        row.put("sourceType", scenario.signalType());
-        row.put("sourceReference", scenario.title());
-        row.put("ingestionMode", "COLLECTOR_RELAY");
-        row.put("pricingSource", valueOrDefault(stored, "pricingSource", "API"));
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("status", "SUCCESS");
-        payload.put("endpoint", writeBaseUrl + "/api/usage");
-        payload.put("deliveryMode", "COLLECTOR_USAGE_RELAY");
-        payload.put("response", Map.of(
-                "status", "SUCCESS",
-                "provider", scenario.provider(),
-                "collectorName", scenario.collectorUrl(),
-                "mode", "AUTOMATIC",
-                "stored", 1,
-                "results", List.of(row)
-        ));
-
-        return Map.of(
-                "provider", scenario.provider(),
-                "status", "SUCCESS",
-                "collectorUrl", scenario.collectorUrl(),
-                "attempts", dispatch.getOrDefault("attempts", 1),
-                "relayFallback", true,
-                "originalDispatchError", dispatch.get("error"),
-                "result", payload
-        );
-    }
-
-    private String effectiveWorkspaceApiKey() {
-        if (configured(workspaceApiKey)) {
-            return workspaceApiKey;
-        }
-        try {
-            return login().apiKey();
-        } catch (Exception ignored) {
-            return null;
-        }
+        return dispatch;
     }
 
     private Map<String, Object> safeReadback(String key, String url, String token) {
