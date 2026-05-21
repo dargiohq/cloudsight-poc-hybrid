@@ -674,7 +674,7 @@ public class CloudSightHybridClient {
 
     private Map<String, Object> postSingleCollectorPayload(String provider, String collectorUrl, Object body) {
         String url = collectorUrl.replaceAll("/$", "");
-        ensureCloudSightWriteReady();
+        softEnsureCloudSightWriteReady();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Object> entity = new HttpEntity<>(body, headers);
@@ -884,6 +884,17 @@ public class CloudSightHybridClient {
             throw new IllegalStateException("CloudSight backend did not become ready for collector dispatch: " + lastError.getMessage(), lastError);
         }
         throw new IllegalStateException("CloudSight backend did not become ready for collector dispatch.");
+    }
+
+    private void softEnsureCloudSightWriteReady() {
+        try {
+            ensureCloudSightWriteReady();
+        } catch (IllegalStateException error) {
+            record("hybrid-warmup", "GET", writeBaseUrl.replaceAll("/$", "") + "/health", Map.of(), Map.of(), 0, Map.of(
+                    "warning", "Proceeding with collector dispatch even though direct warmup did not report ready.",
+                    "error", error.getMessage()
+            ));
+        }
     }
 
     private Map<String, Object> postUsage(String url, String apiKey, UsageRequest body) {
