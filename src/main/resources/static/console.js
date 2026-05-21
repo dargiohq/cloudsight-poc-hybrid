@@ -441,8 +441,8 @@ function renderRunReadback(result, scenario) {
   const dispatchRows = rowsFromDispatch(result, scenario);
   const hasStoredDispatchRow = dispatchRows.length > 0;
 
-  let title = "Product readback deferred";
-  let note = "CloudSight has not confirmed a matching product row yet.";
+  let title = "Run confirmation pending";
+  let note = "CloudSight has not confirmed a matching stored row yet.";
 
   if (verificationStatus === "SUCCESS" && hasLatestLog) {
     title = verification.fallback ? "Collector relay confirmed capture" : "Current run confirmed in CloudSight";
@@ -471,7 +471,7 @@ function renderRunReadback(result, scenario) {
   `;
 
   const cards = [
-    ["Readback state", verificationStatus === "SUCCESS" ? "Live" : hasStoredDispatchRow ? "Stored" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
+    ["Confirmation mode", verificationStatus === "SUCCESS" ? "Live" : hasStoredDispatchRow ? "Stored" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
     ["Matched endpoint", hasLatestLog ? (latestLog.inputEndpoint || scenario.primaryEndpoint || "—") : hasStoredDispatchRow ? (dispatchRows[0].inputEndpoint || scenario.primaryEndpoint || "—") : (scenario.primaryEndpoint || "—")],
     ["Latest row cost", hasLatestLog ? String(latestLog.calculatedCost ?? latestLog.estimatedCost ?? "—") : hasStoredDispatchRow ? String(dispatchRows[0].calculatedCost ?? "—") : "—"],
     ["Latest row time", hasLatestLog ? String(latestLog.timestamp || latestLog.createdAt || "—") : hasStoredDispatchRow ? String(dispatchRows[0].timestamp || "—") : "—"]
@@ -536,9 +536,8 @@ async function runSelected() {
     renderResultNarrative(result, scenario);
     renderUsageTable(result, scenario);
     resultPanel.textContent = JSON.stringify(result, null, 2);
-    await loadAudit();
-    await refreshWorkspaceSnapshot();
     renderRunReadback(result, scenario);
+    await loadAudit();
     const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
     setBanner(
       dispatchStatus === "SUCCESS"
@@ -551,6 +550,7 @@ async function runSelected() {
   } catch (error) {
     renderResultNarrative({ status: "ERROR" }, scenario);
     resultPanel.textContent = error.stack || String(error);
+    renderUsageTable(null, scenario);
     setBanner(`The ${scenario.serviceFamily} run failed before CloudSight could confirm it.`, "error");
   } finally {
     state.loadingScenarioId = null;
@@ -615,7 +615,7 @@ function renderOverviewCards(overview) {
     <p>${escapeHtml(note || `Readback mode: ${mode}`)}</p>
   `;
   const cards = [
-    ["Readback state", authState === "CONNECTED" ? "Live" : authState === "DEGRADED" ? "Cached" : "Deferred"],
+    ["Workspace snapshot", authState === "CONNECTED" ? "Live" : authState === "DEGRADED" ? "Cached" : "Optional"],
     ["Current spend", dashboard.currentSpend ?? "—"],
     ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
     ["Providers connected", connections.providersConnected ?? "—"]

@@ -52,6 +52,8 @@ public class CloudSightHybridClient {
     private static final int COLLECTOR_PROXY_ATTEMPTS = 6;
     private static final int COLLECTOR_STATUS_ATTEMPTS = 90;
     private static final long COLLECTOR_STATUS_BASE_DELAY_MS = 1_500L;
+    private static final int COLLECTOR_WAKE_ATTEMPTS = 20;
+    private static final long COLLECTOR_WAKE_DELAY_MS = 3_000L;
     private static final int CLOUDSIGHT_VERIFY_ATTEMPTS = 8;
     private static final int COLLECTOR_READBACK_ATTEMPTS = 8;
     private static final long COLLECTOR_READBACK_DELAY_MS = 1_500L;
@@ -208,6 +210,17 @@ public class CloudSightHybridClient {
         ));
         overview.put("liveSetup", liveSetup());
 
+        if (cachedCloudSightSnapshot != null
+                && cachedCloudSightSnapshotAt != null
+                && cachedCloudSightSnapshotAt.isAfter(Instant.now().minus(5, ChronoUnit.MINUTES))) {
+            Map<String, Object> snapshot = new LinkedHashMap<>(cachedCloudSightSnapshot);
+            snapshot.put("auth", "DEGRADED");
+            snapshot.put("readbackMode", "CACHED");
+            snapshot.put("message", "Showing the most recent successful CloudSight workspace snapshot. Exact proof confirmation stays in the run panels below.");
+            overview.put("cloudSight", snapshot);
+            return overview;
+        }
+
         try {
             Session session = login();
             Map<String, Object> cloudSight = new LinkedHashMap<>();
@@ -354,6 +367,7 @@ public class CloudSightHybridClient {
 
         String runId = UUID.randomUUID().toString();
         return withAuditContext(auditContextFor(runId, scenario), () -> {
+            ensureCollectorReady(scenario.provider(), scenario.collectorUrl());
             Map<String, Object> dispatch = postSingleCollectorPayload(
                     scenario.provider(),
                     scenario.collectorUrl(),
@@ -393,6 +407,7 @@ public class CloudSightHybridClient {
         try {
             return withAuditContext(auditContextFor(runId, scenario), () -> {
                 requireProviderConfigured(normalizedProvider);
+                ensureCollectorReady(normalizedProvider, scenario.collectorUrl());
 
                 Map<String, Object> liveCall = switch (normalizedProvider) {
                     case LIVE_AWS_PROVIDER -> runAwsLiveS3Call();
@@ -653,6 +668,7 @@ public class CloudSightHybridClient {
     }
 
     private Map<String, Object> postCollectorPayloads(String provider, String collectorUrl, List<Object> payloads) {
+        ensureCollectorReady(provider, collectorUrl);
         List<Map<String, Object>> results = new ArrayList<>();
         boolean anyError = false;
         for (Object payload : payloads) {
@@ -674,7 +690,6 @@ public class CloudSightHybridClient {
 
     private Map<String, Object> postSingleCollectorPayload(String provider, String collectorUrl, Object body) {
         String url = collectorUrl.replaceAll("/$", "");
-        softEnsureCloudSightWriteReady();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Object> entity = new HttpEntity<>(body, headers);
@@ -835,6 +850,36 @@ public class CloudSightHybridClient {
         );
     }
 
+    private void ensureCollectorReady(String provider, String collectorUrl) {
+        String healthUrl = collectorUrl.replaceAll("/$", "") + "/health";
+        HttpEntity<Void> entity = new HttpEntity<>(new HttpHeaders());
+        RestClientException lastError = null;
+        for (int attempt = 1; attempt <= COLLECTOR_WAKE_ATTEMPTS; attempt++) {
+            try {
+                ResponseEntity<String> response = restTemplate.exchange(healthUrl, HttpMethod.GET, entity, String.class);
+                record("hybrid-collector-warmup", "GET", healthUrl, Map.of(), Map.of(
+                        "provider", provider,
+                        "attempt", attempt
+                ), response.getStatusCode().value(), response.getBody());
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    return;
+                }
+            } catch (RestClientException error) {
+                lastError = error;
+                record("hybrid-collector-warmup", "GET", healthUrl, Map.of(), Map.of(
+                        "provider", provider,
+                        "attempt", attempt
+                ), 0, Map.of("error", error.getMessage()));
+            }
+            sleep(COLLECTOR_WAKE_DELAY_MS);
+        }
+
+        if (lastError != null) {
+            throw new IllegalStateException("The " + provider + " collector did not become ready in time: " + lastError.getMessage(), lastError);
+        }
+        throw new IllegalStateException("The " + provider + " collector did not become ready in time.");
+    }
+
     private String collectorPollUrl(String collectorUrl, Map<String, Object> payload) {
         Object direct = payload.get("pollUrl");
         if (direct != null && !String.valueOf(direct).isBlank()) {
@@ -860,41 +905,6 @@ public class CloudSightHybridClient {
     private long collectorPollDelayMs(int attempt) {
         long base = COLLECTOR_STATUS_BASE_DELAY_MS + (attempt > 8 ? 1_500L : 0L);
         return Math.min(4_000L, base);
-    }
-
-    private void ensureCloudSightWriteReady() {
-        String healthUrl = writeBaseUrl.replaceAll("/$", "") + "/health";
-        HttpEntity<Void> entity = new HttpEntity<>(new HttpHeaders());
-        RestClientException lastError = null;
-        for (int attempt = 1; attempt <= 40; attempt++) {
-            try {
-                ResponseEntity<String> response = restTemplate.exchange(healthUrl, HttpMethod.GET, entity, String.class);
-                record("hybrid-warmup", "GET", healthUrl, Map.of(), Map.of("attempt", attempt), response.getStatusCode().value(), response.getBody());
-                if (response.getStatusCode().is2xxSuccessful()) {
-                    return;
-                }
-            } catch (RestClientException error) {
-                lastError = error;
-                record("hybrid-warmup", "GET", healthUrl, Map.of(), Map.of("attempt", attempt), 0, Map.of("error", error.getMessage()));
-            }
-            sleep(4000L);
-        }
-
-        if (lastError != null) {
-            throw new IllegalStateException("CloudSight backend did not become ready for collector dispatch: " + lastError.getMessage(), lastError);
-        }
-        throw new IllegalStateException("CloudSight backend did not become ready for collector dispatch.");
-    }
-
-    private void softEnsureCloudSightWriteReady() {
-        try {
-            ensureCloudSightWriteReady();
-        } catch (IllegalStateException error) {
-            record("hybrid-warmup", "GET", writeBaseUrl.replaceAll("/$", "") + "/health", Map.of(), Map.of(), 0, Map.of(
-                    "warning", "Proceeding with collector dispatch even though direct warmup did not report ready.",
-                    "error", error.getMessage()
-            ));
-        }
     }
 
     private Map<String, Object> postUsage(String url, String apiKey, UsageRequest body) {
