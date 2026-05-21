@@ -350,6 +350,7 @@ public class CloudSightHybridClient {
 
         String runId = UUID.randomUUID().toString();
         return withAuditContext(auditContextFor(runId, scenario), () -> {
+            Session session = verify ? safeLogin() : null;
             Map<String, Object> dispatch = postSingleCollectorPayload(
                     scenario.provider(),
                     scenario.collectorUrl(),
@@ -358,7 +359,7 @@ public class CloudSightHybridClient {
             dispatch = ensureCollectorRelayCapture(scenario, dispatch);
 
             Map<String, Object> verification = verify
-                    ? verifyScenarioAfterDispatch(null, scenario, dispatch)
+                    ? verifyScenarioAfterDispatch(session == null ? null : session.token(), scenario, dispatch)
                     : verificationFromDispatch(scenario, dispatch, "Verification was skipped.");
 
             return Map.of(
@@ -381,6 +382,7 @@ public class CloudSightHybridClient {
         try {
             return withAuditContext(auditContextFor(runId, scenario), () -> {
                 requireProviderConfigured(normalizedProvider);
+                Session session = verify ? safeLogin() : null;
 
                 Map<String, Object> liveCall = switch (normalizedProvider) {
                     case LIVE_AWS_PROVIDER -> runAwsLiveS3Call();
@@ -398,7 +400,7 @@ public class CloudSightHybridClient {
                 dispatch = ensureCollectorRelayCapture(scenario, dispatch);
 
                 Map<String, Object> verification = verify
-                        ? verifyScenarioAfterDispatch(null, scenario, dispatch)
+                        ? verifyScenarioAfterDispatch(session == null ? null : session.token(), scenario, dispatch)
                         : verificationFromDispatch(scenario, dispatch, "Verification was skipped.");
 
                 return Map.of(
@@ -561,6 +563,14 @@ public class CloudSightHybridClient {
         cachedSession = new Session(token, apiKey);
         cachedSessionExpiresAt = Instant.now().plus(45, ChronoUnit.MINUTES);
         return cachedSession;
+    }
+
+    private Session safeLogin() {
+        try {
+            return login();
+        } catch (RestClientException ignored) {
+            return null;
+        }
     }
 
     private List<Map<String, Object>> ensureConnections(String token) {

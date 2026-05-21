@@ -29,7 +29,7 @@ body {
 }
 
 .shell {
-  width: min(1360px, calc(100vw - 32px));
+  width: min(1580px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 20px 0 32px;
 }
@@ -150,7 +150,7 @@ h3 {
 
 .playground-shell {
   display: grid;
-  grid-template-columns: minmax(300px, 340px) minmax(360px, 420px) minmax(460px, 1fr);
+  grid-template-columns: minmax(280px, 320px) minmax(320px, 380px) minmax(620px, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -446,7 +446,7 @@ h3 {
 .result-panel {
   margin: 0;
   overflow: auto;
-  max-height: 340px;
+  max-height: 220px;
   border-radius: 20px;
   padding: 16px;
   background: #04101f;
@@ -495,7 +495,7 @@ h3 {
 .audit-panel {
   display: grid;
   gap: 10px;
-  max-height: 420px;
+  max-height: 520px;
   overflow: auto;
 }
 
@@ -534,7 +534,7 @@ h3 {
 }
 
 .usage-table-wrap {
-  min-height: 240px;
+  min-height: 320px;
   overflow: auto;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.06);
