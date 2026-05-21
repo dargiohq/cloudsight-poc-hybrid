@@ -53,6 +53,8 @@ public class CloudSightHybridClient {
     private static final int COLLECTOR_STATUS_ATTEMPTS = 90;
     private static final long COLLECTOR_STATUS_BASE_DELAY_MS = 1_500L;
     private static final int CLOUDSIGHT_VERIFY_ATTEMPTS = 8;
+    private static final int COLLECTOR_READBACK_ATTEMPTS = 8;
+    private static final long COLLECTOR_READBACK_DELAY_MS = 1_500L;
     private static final DateTimeFormatter AWS_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(java.time.ZoneOffset.UTC);
     private static final DateTimeFormatter AWS_DATE = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(java.time.ZoneOffset.UTC);
     private static final String LIVE_AWS_PROVIDER = "AWS";
@@ -1190,7 +1192,7 @@ public class CloudSightHybridClient {
         List<Map<String, Object>> rows = dispatchRows(dispatch, scenario);
         if (rows.isEmpty()) {
             return Map.of(
-                    "status", "NOT_FOUND",
+                "status", "NOT_FOUND",
                     "message", "CloudSight collector response did not include stored rows."
             );
         }
@@ -1203,14 +1205,32 @@ public class CloudSightHybridClient {
                 + "&collector=" + encodeQuery(String.valueOf(latest.getOrDefault("collectorName", "")))
                 + "&limit=5";
 
-        Map<String, Object> payload = getJsonWithApiKey(url, apiKey);
-        List<Map<String, Object>> readbackRows = rowsFromCollectorReadback(payload);
+        List<Map<String, Object>> readbackRows = List.of();
+        RestClientException lastError = null;
+        for (int attempt = 1; attempt <= COLLECTOR_READBACK_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                sleep(COLLECTOR_READBACK_DELAY_MS * attempt);
+            }
+            try {
+                Map<String, Object> payload = getJsonWithApiKey(url, apiKey);
+                readbackRows = rowsFromCollectorReadback(payload);
+                if (!readbackRows.isEmpty()) {
+                    break;
+                }
+            } catch (RestClientException error) {
+                lastError = error;
+                if (attempt == COLLECTOR_READBACK_ATTEMPTS) {
+                    throw error;
+                }
+            }
+        }
+
         if (readbackRows.isEmpty()) {
             return fallbackVerificationFromDispatch(
                     scenario,
                     dispatch,
-                    "CloudSight accepted the collector batch, but direct readback has not returned the row yet.",
-                    "Collector readback returned no matching rows."
+                    "CloudSight stored the collector row, but direct readback is still catching up.",
+                    lastError == null ? "Collector readback returned no matching rows yet." : lastError.getMessage()
             );
         }
         return Map.of(

@@ -295,6 +295,11 @@ function renderResultSummary(result, scenario) {
     chips.push(`live:${liveCall.status}`);
   }
 
+  const storedCount = result?.dispatch?.result?.response?.stored;
+  if (storedCount) {
+    chips.push(`stored:${storedCount}`);
+  }
+
   resultSummary.innerHTML = chips.map((chip, index) => `
     <span class="pill ${index >= 2 && /SUCCESS/i.test(chip) ? "pill-ok" : ""}">${escapeHtml(chip)}</span>
   `).join("");
@@ -319,6 +324,8 @@ function renderResultNarrative(result, scenario) {
 
   if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && deliveryMode === "COLLECTOR_USAGE_RELAY") {
     message = "The real provider call succeeded and the collector relayed the normalized row into CloudSight successfully.";
+  } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && verificationStatus === "SUCCESS") {
+    message = "The real provider call succeeded, the collector stored the signal in CloudSight, and the matching row was confirmed.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
     message = "The real provider call succeeded and the collector delivered the signal to CloudSight successfully.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
@@ -334,9 +341,36 @@ function renderResultNarrative(result, scenario) {
   resultNarrative.innerHTML = `
     <div class="narrative-card">
       <strong>${escapeHtml(message)}</strong>
-      <p>Live call: ${escapeHtml(liveStatus)}. Collector dispatch: ${escapeHtml(dispatchStatus)}. Product verification: ${escapeHtml(verificationStatus)}.</p>
+      <p>Live call: ${escapeHtml(liveStatus)}. Collector dispatch: ${escapeHtml(dispatchStatus)}. Product verification: ${escapeHtml(verificationStatus)}.${storedCountText(result)}</p>
     </div>
   `;
+}
+
+function storedCountText(result) {
+  const stored = result?.dispatch?.result?.response?.stored;
+  return stored ? ` Stored rows: ${escapeHtml(String(stored))}.` : "";
+}
+
+function rowsFromDispatch(result, scenario) {
+  const rows = result?.dispatch?.result?.response?.results;
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+  return rows.map((row) => ({
+    timestamp: row.timestamp || "—",
+    service: row.service || scenario.provider,
+    inputEndpoint: row.inputEndpoint || scenario.primaryEndpoint,
+    outputEndpoint: row.outputEndpoint || "—",
+    inputUnits: row.inputUnits || 0,
+    outputUnits: row.outputUnits || 0,
+    calculatedCost: row.calculatedCost ?? "—",
+    collectorName: row.collectorName || "",
+    sourceType: row.sourceType || "",
+    sourceReference: row.sourceReference || "",
+    regionCode: row.regionCode || "",
+    deploymentEnvironment: row.deploymentEnvironment || "",
+    ingestionMode: row.ingestionMode || "COLLECTOR"
+  }));
 }
 
 function statusTone(status) {
@@ -351,11 +385,13 @@ function statusTone(status) {
 
 function renderUsageTable(result, scenario) {
   const matched = result?.verification?.matchedLogs;
-  const rows = Array.isArray(matched)
+  const readbackRows = Array.isArray(matched)
     ? matched
     : result?.verification?.latestLog && Object.keys(result.verification.latestLog).length
       ? [result.verification.latestLog]
       : [];
+  const dispatchRows = rowsFromDispatch(result, scenario);
+  const rows = readbackRows.length ? readbackRows : dispatchRows;
 
   if (!rows.length) {
     usageTableMeta.textContent = result?.verification?.status === "RATE_LIMITED"
@@ -369,9 +405,14 @@ function renderUsageTable(result, scenario) {
     return;
   }
 
-  usageTableMeta.textContent = result?.verification?.fallback
-    ? `Showing the latest ${rows.length} captured row${rows.length === 1 ? "" : "s"} confirmed by the collector relay for ${scenario.primaryEndpoint}.`
-    : `Showing the latest ${rows.length} CloudSight row${rows.length === 1 ? "" : "s"} matching ${scenario.primaryEndpoint}. The newest match is highlighted.`;
+  if (readbackRows.length) {
+    usageTableMeta.textContent = result?.verification?.fallback
+      ? `Showing the latest ${rows.length} captured row${rows.length === 1 ? "" : "s"} confirmed by the collector relay for ${scenario.primaryEndpoint}.`
+      : `Showing the latest ${rows.length} CloudSight row${rows.length === 1 ? "" : "s"} matching ${scenario.primaryEndpoint}. The newest match is highlighted.`;
+  } else {
+    usageTableMeta.textContent = `Showing the stored collector response row${rows.length === 1 ? "" : "s"} while direct CloudSight readback catches up for ${scenario.primaryEndpoint}.`;
+  }
+
   usageTableBody.innerHTML = rows.map((row, index) => {
     const primary = row.inputEndpoint || row.primaryEndpoint || "—";
     const secondary = row.outputEndpoint || row.secondaryEndpoint || "—";
@@ -397,6 +438,8 @@ function renderRunReadback(result, scenario) {
   const liveStatus = result?.liveCall?.status || "SKIPPED";
   const dispatchStatus = result?.dispatch?.status || result?.status || "UNKNOWN";
   const verificationStatus = verification.status || "SKIPPED";
+  const dispatchRows = rowsFromDispatch(result, scenario);
+  const hasStoredDispatchRow = dispatchRows.length > 0;
 
   let title = "Product readback deferred";
   let note = "CloudSight has not confirmed a matching product row yet.";
@@ -406,6 +449,9 @@ function renderRunReadback(result, scenario) {
     note = verification.fallback
       ? `The collector relay returned a stored ${scenario.primaryEndpoint} row for this run.`
       : `CloudSight returned a matching ${scenario.primaryEndpoint} row for this run.`;
+  } else if (dispatchStatus === "SUCCESS" && hasStoredDispatchRow) {
+    title = "CloudSight stored the row";
+    note = "The collector response already includes the stored CloudSight row for this run. Direct product readback is still catching up.";
   } else if (dispatchStatus === "SUCCESS") {
     title = "Collector delivered the signal";
     note = "CloudSight accepted the collector dispatch. Product readback is still polling for the newest row.";
@@ -425,10 +471,10 @@ function renderRunReadback(result, scenario) {
   `;
 
   const cards = [
-    ["Readback state", verificationStatus === "SUCCESS" ? "Live" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
-    ["Matched endpoint", hasLatestLog ? (latestLog.inputEndpoint || scenario.primaryEndpoint || "—") : (scenario.primaryEndpoint || "—")],
-    ["Latest row cost", hasLatestLog ? String(latestLog.calculatedCost ?? latestLog.estimatedCost ?? "—") : "—"],
-    ["Latest row time", hasLatestLog ? String(latestLog.timestamp || latestLog.createdAt || "—") : "—"]
+    ["Readback state", verificationStatus === "SUCCESS" ? "Live" : hasStoredDispatchRow ? "Stored" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
+    ["Matched endpoint", hasLatestLog ? (latestLog.inputEndpoint || scenario.primaryEndpoint || "—") : hasStoredDispatchRow ? (dispatchRows[0].inputEndpoint || scenario.primaryEndpoint || "—") : (scenario.primaryEndpoint || "—")],
+    ["Latest row cost", hasLatestLog ? String(latestLog.calculatedCost ?? latestLog.estimatedCost ?? "—") : hasStoredDispatchRow ? String(dispatchRows[0].calculatedCost ?? "—") : "—"],
+    ["Latest row time", hasLatestLog ? String(latestLog.timestamp || latestLog.createdAt || "—") : hasStoredDispatchRow ? String(dispatchRows[0].timestamp || "—") : "—"]
   ];
 
   overviewGrid.innerHTML = cards.map(([label, value]) => `
