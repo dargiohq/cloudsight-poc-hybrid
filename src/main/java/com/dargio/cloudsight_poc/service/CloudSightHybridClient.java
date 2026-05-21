@@ -358,10 +358,17 @@ public class CloudSightHybridClient {
                     scenario.payload()
             );
             dispatch = ensureCollectorRelayCapture(scenario, dispatch);
-            Session session = verify && "SUCCESS".equals(String.valueOf(dispatch.get("status"))) ? safeLogin() : null;
+            String readbackApiKey = configured(workspaceApiKey) ? workspaceApiKey : "";
+            Session session = null;
+            if (verify && "SUCCESS".equals(String.valueOf(dispatch.get("status"))) && !configured(readbackApiKey)) {
+                session = safeLogin();
+                if (session != null) {
+                    readbackApiKey = session.apiKey();
+                }
+            }
 
             Map<String, Object> verification = verify
-                    ? verifyScenarioAfterDispatch(session == null ? null : session.token(), scenario, dispatch)
+                    ? verifyScenarioAfterDispatch(session == null ? null : session.token(), readbackApiKey, scenario, dispatch)
                     : verificationFromDispatch(scenario, dispatch, "Verification was skipped.");
 
             return Map.of(
@@ -399,10 +406,17 @@ public class CloudSightHybridClient {
                         liveCall.get("collectorPayload")
                 );
                 dispatch = ensureCollectorRelayCapture(scenario, dispatch);
-                Session session = verify && "SUCCESS".equals(String.valueOf(dispatch.get("status"))) ? safeLogin() : null;
+                String readbackApiKey = configured(workspaceApiKey) ? workspaceApiKey : "";
+                Session session = null;
+                if (verify && "SUCCESS".equals(String.valueOf(dispatch.get("status"))) && !configured(readbackApiKey)) {
+                    session = safeLogin();
+                    if (session != null) {
+                        readbackApiKey = session.apiKey();
+                    }
+                }
 
                 Map<String, Object> verification = verify
-                        ? verifyScenarioAfterDispatch(session == null ? null : session.token(), scenario, dispatch)
+                        ? verifyScenarioAfterDispatch(session == null ? null : session.token(), readbackApiKey, scenario, dispatch)
                         : verificationFromDispatch(scenario, dispatch, "Verification was skipped.");
 
                 return Map.of(
@@ -658,6 +672,7 @@ public class CloudSightHybridClient {
 
     private Map<String, Object> postSingleCollectorPayload(String provider, String collectorUrl, Object body) {
         String url = collectorUrl.replaceAll("/$", "");
+        ensureCloudSightWriteReady();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Object> entity = new HttpEntity<>(body, headers);
@@ -845,6 +860,30 @@ public class CloudSightHybridClient {
         return Math.min(4_000L, base);
     }
 
+    private void ensureCloudSightWriteReady() {
+        String healthUrl = writeBaseUrl.replaceAll("/$", "") + "/health";
+        HttpEntity<Void> entity = new HttpEntity<>(new HttpHeaders());
+        RestClientException lastError = null;
+        for (int attempt = 1; attempt <= 40; attempt++) {
+            try {
+                ResponseEntity<String> response = restTemplate.exchange(healthUrl, HttpMethod.GET, entity, String.class);
+                record("hybrid-warmup", "GET", healthUrl, Map.of(), Map.of("attempt", attempt), response.getStatusCode().value(), response.getBody());
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    return;
+                }
+            } catch (RestClientException error) {
+                lastError = error;
+                record("hybrid-warmup", "GET", healthUrl, Map.of(), Map.of("attempt", attempt), 0, Map.of("error", error.getMessage()));
+            }
+            sleep(4000L);
+        }
+
+        if (lastError != null) {
+            throw new IllegalStateException("CloudSight backend did not become ready for collector dispatch: " + lastError.getMessage(), lastError);
+        }
+        throw new IllegalStateException("CloudSight backend did not become ready for collector dispatch.");
+    }
+
     private Map<String, Object> postUsage(String url, String apiKey, UsageRequest body) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-API-KEY", apiKey);
@@ -880,6 +919,21 @@ public class CloudSightHybridClient {
                 "outputUnits", body.getOutputUnits(),
                 "timestamp", body.getTimestamp()
         ), response.getStatusCode().value(), response.getBody());
+        return response.getBody();
+    }
+
+    private Map<String, Object> getJsonWithApiKey(String url, String apiKey) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-API-KEY", apiKey);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        ResponseEntity<Map> response;
+        try {
+            response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+        } catch (RestClientException error) {
+            record("hybrid-readback", "GET", url, Map.of("X-API-KEY", mask(apiKey)), Map.of(), 0, Map.of("error", error.getMessage()));
+            throw error;
+        }
+        record("hybrid-readback", "GET", url, Map.of("X-API-KEY", mask(apiKey)), Map.of(), response.getStatusCode().value(), response.getBody());
         return response.getBody();
     }
 
@@ -1079,15 +1133,30 @@ public class CloudSightHybridClient {
         );
     }
 
-    private Map<String, Object> verifyScenarioAfterDispatch(String token, DemoScenario scenario, Map<String, Object> dispatch) {
+    private Map<String, Object> verifyScenarioAfterDispatch(String token, String apiKey, DemoScenario scenario, Map<String, Object> dispatch) {
         if (!"SUCCESS".equals(String.valueOf(dispatch.get("status")))) {
             return Map.of(
                     "status", "SKIPPED",
                     "reason", "Collector dispatch did not succeed, so CloudSight readback was skipped."
             );
         }
+        if (configured(apiKey)) {
+            try {
+                Map<String, Object> verification = verifyScenarioViaCollectorReadback(apiKey, scenario, dispatch);
+                if ("SUCCESS".equals(String.valueOf(verification.get("status")))) {
+                    return verification;
+                }
+            } catch (RestClientException error) {
+                return fallbackVerificationFromDispatch(
+                        scenario,
+                        dispatch,
+                        "Collector ingestion succeeded, but direct CloudSight readback could not confirm the row yet.",
+                        error.getMessage()
+                );
+            }
+        }
         if (token == null || token.isBlank()) {
-            return verificationFromDispatch(scenario, dispatch, "Collector relay confirmed the stored row without workspace login.");
+            return verificationFromDispatch(scenario, dispatch, "CloudSight ingestion confirmed the stored row directly from the collector response.");
         }
         RestClientException lastError = null;
         for (int attempt = 1; attempt <= CLOUDSIGHT_VERIFY_ATTEMPTS; attempt++) {
@@ -1112,8 +1181,48 @@ public class CloudSightHybridClient {
         return fallbackVerificationFromDispatch(
                 scenario,
                 dispatch,
-                "Workspace readback could not confirm the row yet, so this confirmation is based on the collector relay response.",
+                "Workspace readback could not confirm the row yet, so this confirmation is based on the CloudSight collector ingestion response.",
                 lastError == null ? "Verification could not confirm the latest row yet." : lastError.getMessage()
+        );
+    }
+
+    private Map<String, Object> verifyScenarioViaCollectorReadback(String apiKey, DemoScenario scenario, Map<String, Object> dispatch) {
+        List<Map<String, Object>> rows = dispatchRows(dispatch, scenario);
+        if (rows.isEmpty()) {
+            return Map.of(
+                    "status", "NOT_FOUND",
+                    "message", "CloudSight collector response did not include stored rows."
+            );
+        }
+
+        Map<String, Object> latest = rows.get(0);
+        String url = writeBaseUrl
+                + "/api/collector/readback?service=" + encodeQuery(String.valueOf(latest.getOrDefault("service", scenario.provider())))
+                + "&inputEndpoint=" + encodeQuery(String.valueOf(latest.getOrDefault("inputEndpoint", scenario.primaryEndpoint())))
+                + "&sourceReference=" + encodeQuery(String.valueOf(latest.getOrDefault("sourceReference", "")))
+                + "&collector=" + encodeQuery(String.valueOf(latest.getOrDefault("collectorName", "")))
+                + "&limit=5";
+
+        Map<String, Object> payload = getJsonWithApiKey(url, apiKey);
+        List<Map<String, Object>> readbackRows = rowsFromCollectorReadback(payload);
+        if (readbackRows.isEmpty()) {
+            return fallbackVerificationFromDispatch(
+                    scenario,
+                    dispatch,
+                    "CloudSight accepted the collector batch, but direct readback has not returned the row yet.",
+                    "Collector readback returned no matching rows."
+            );
+        }
+        return Map.of(
+                "status", "SUCCESS",
+                "message", "CloudSight confirmed the matching stored row through collector/API-key readback.",
+                "matchedLogs", readbackRows,
+                "latestLog", readbackRows.get(0),
+                "summary", Map.of(
+                        "provider", scenario.provider(),
+                        "serviceFamily", scenario.serviceFamily(),
+                        "source", "collector-readback"
+                )
         );
     }
 
@@ -1192,6 +1301,21 @@ public class CloudSightHybridClient {
         return normalized;
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> rowsFromCollectorReadback(Map<String, Object> payload) {
+        Object rows = payload == null ? null : payload.get("rows");
+        if (!(rows instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> normalized = new ArrayList<>();
+        for (Object row : list) {
+            if (row instanceof Map<?, ?> map) {
+                normalized.add(new LinkedHashMap<>((Map<String, Object>) map));
+            }
+        }
+        return normalized;
+    }
+
     private Object valueOrDefault(Map<?, ?> source, String key, Object fallback) {
         Object value = source.get(key);
         return value == null ? fallback : value;
@@ -1266,14 +1390,27 @@ public class CloudSightHybridClient {
     }
 
     private Map<String, Object> awsS3Payload(Instant timestamp) {
+        return awsS3Payload(timestamp, "cloudsight-demo", null, null);
+    }
+
+    private Map<String, Object> awsS3Payload(Instant timestamp, String bucketName, String objectKey, String batchReference) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("bucket", Map.of("name", bucketName));
+        if (objectKey != null && !objectKey.isBlank()) {
+            detail.put("object", Map.of("key", objectKey));
+            detail.put("requestParameters", Map.of(
+                    "bucketName", bucketName,
+                    "key", objectKey
+            ));
+        }
         return Map.of(
-                "batchReference", "poc-aws-s3-" + UUID.randomUUID(),
+                "batchReference", batchReference == null || batchReference.isBlank() ? "poc-aws-s3-" + UUID.randomUUID() : batchReference,
                 "source", "aws.s3",
                 "detail-type", "Object Created",
                 "time", timestamp.toString(),
                 "region", "ap-south-1",
                 "account", "demo-aws-account",
-                "detail", Map.of("bucket", Map.of("name", "cloudsight-demo"))
+                "detail", detail
         );
     }
 
@@ -1306,19 +1443,27 @@ public class CloudSightHybridClient {
     }
 
     private Map<String, Object> gcpStoragePayload(Instant timestamp) {
-        return Map.of(
-                "protoPayload", Map.of(
+        return gcpStoragePayload(timestamp, "cloudsight-demo-gcp", null, null);
+    }
+
+    private Map<String, Object> gcpStoragePayload(Instant timestamp, String projectId, String objectName, String batchReference) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("protoPayload", Map.of(
                         "serviceName", "storage.googleapis.com",
                         "methodName", "storage.objects.create"
-                ),
-                "resource", Map.of(
+                ));
+        payload.put("resource", Map.of(
                         "labels", Map.of(
                                 "location", "asia-south1",
-                                "project_id", "cloudsight-demo-gcp"
+                                "project_id", projectId
                         )
-                ),
-                "timestamp", timestamp.toString()
-        );
+                ));
+        payload.put("timestamp", timestamp.toString());
+        if (objectName != null && !objectName.isBlank()) {
+            payload.put("resourceName", "projects/_/buckets/" + liveGcpBucket + "/objects/" + objectName);
+        }
+        payload.put("insertId", batchReference == null || batchReference.isBlank() ? "poc-gcp-storage-" + UUID.randomUUID() : batchReference);
+        return payload;
     }
 
     private Map<String, Object> gcpGeminiPayload(Instant timestamp) {
@@ -1346,11 +1491,21 @@ public class CloudSightHybridClient {
     }
 
     private List<Map<String, Object>> azureBlobPayload(Instant timestamp) {
+        return azureBlobPayload(timestamp, null, null);
+    }
+
+    private List<Map<String, Object>> azureBlobPayload(Instant timestamp, String blobUrl, String eventId) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("api", "centralindia");
+        if (blobUrl != null && !blobUrl.isBlank()) {
+            data.put("url", redactUrl(blobUrl));
+        }
         return List.of(Map.of(
-                "id", UUID.randomUUID().toString(),
+                "id", eventId == null || eventId.isBlank() ? UUID.randomUUID().toString() : eventId,
                 "eventType", "Microsoft.Storage.BlobCreated",
                 "eventTime", timestamp.toString(),
-                "data", Map.of("api", "centralindia")
+                "subject", blobUrl == null || blobUrl.isBlank() ? "/blobServices/default/containers/cloudsight-demo/blobs/created.txt" : redactUrl(blobUrl),
+                "data", data
         ));
     }
 
@@ -1427,7 +1582,7 @@ public class CloudSightHybridClient {
                 "status", "SUCCESS",
                 "resource", Map.of("bucket", liveAwsBucket, "key", objectKey, "region", liveAwsRegion),
                 "httpStatus", response.statusCode(),
-                "collectorPayload", awsS3Payload(now)
+                "collectorPayload", awsS3Payload(now, liveAwsBucket, objectKey, "live-aws-s3-" + UUID.randomUUID())
         );
     }
 
@@ -1458,7 +1613,7 @@ public class CloudSightHybridClient {
                 "status", "SUCCESS",
                 "resource", Map.of("bucket", liveGcpBucket, "object", objectName),
                 "httpStatus", response.statusCode(),
-                "collectorPayload", gcpStoragePayload(now)
+                "collectorPayload", gcpStoragePayload(now, String.valueOf(serviceAccount.getOrDefault("project_id", "cloudsight-demo-gcp")), objectName, "live-gcp-storage-" + UUID.randomUUID())
         );
     }
 
@@ -1488,7 +1643,7 @@ public class CloudSightHybridClient {
                 "status", "SUCCESS",
                 "resource", Map.of("blobUrl", redactUrl(blobUrl)),
                 "httpStatus", response.statusCode(),
-                "collectorPayload", azureBlobPayload(now)
+                "collectorPayload", azureBlobPayload(now, blobUrl, "live-azure-blob-" + UUID.randomUUID())
         );
     }
 
