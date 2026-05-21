@@ -50,6 +50,8 @@ public class CloudSightHybridClient {
     private static final long COLLECTOR_DISPATCH_DELAY_MS = 2_500L;
     private static final long COLLECTOR_PROVIDER_DELAY_MS = 4_000L;
     private static final int COLLECTOR_PROXY_ATTEMPTS = 6;
+    private static final int COLLECTOR_STATUS_ATTEMPTS = 90;
+    private static final long COLLECTOR_STATUS_BASE_DELAY_MS = 1_500L;
     private static final int CLOUDSIGHT_VERIFY_ATTEMPTS = 8;
     private static final DateTimeFormatter AWS_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(java.time.ZoneOffset.UTC);
     private static final DateTimeFormatter AWS_DATE = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(java.time.ZoneOffset.UTC);
@@ -350,13 +352,13 @@ public class CloudSightHybridClient {
 
         String runId = UUID.randomUUID().toString();
         return withAuditContext(auditContextFor(runId, scenario), () -> {
-            Session session = verify ? safeLogin() : null;
             Map<String, Object> dispatch = postSingleCollectorPayload(
                     scenario.provider(),
                     scenario.collectorUrl(),
                     scenario.payload()
             );
             dispatch = ensureCollectorRelayCapture(scenario, dispatch);
+            Session session = verify && "SUCCESS".equals(String.valueOf(dispatch.get("status"))) ? safeLogin() : null;
 
             Map<String, Object> verification = verify
                     ? verifyScenarioAfterDispatch(session == null ? null : session.token(), scenario, dispatch)
@@ -382,7 +384,6 @@ public class CloudSightHybridClient {
         try {
             return withAuditContext(auditContextFor(runId, scenario), () -> {
                 requireProviderConfigured(normalizedProvider);
-                Session session = verify ? safeLogin() : null;
 
                 Map<String, Object> liveCall = switch (normalizedProvider) {
                     case LIVE_AWS_PROVIDER -> runAwsLiveS3Call();
@@ -398,6 +399,7 @@ public class CloudSightHybridClient {
                         liveCall.get("collectorPayload")
                 );
                 dispatch = ensureCollectorRelayCapture(scenario, dispatch);
+                Session session = verify && "SUCCESS".equals(String.valueOf(dispatch.get("status"))) ? safeLogin() : null;
 
                 Map<String, Object> verification = verify
                         ? verifyScenarioAfterDispatch(session == null ? null : session.token(), scenario, dispatch)
@@ -670,6 +672,10 @@ public class CloudSightHybridClient {
                 ), response.getStatusCode().value(), response.getBody());
                 Map<String, Object> payload = response.getBody() == null ? Map.of() : response.getBody();
                 String payloadStatus = String.valueOf(payload.getOrDefault("status", "SUCCESS"));
+                String payloadState = String.valueOf(payload.getOrDefault("state", payloadStatus));
+                if ("ACCEPTED".equalsIgnoreCase(payloadStatus) || "RUNNING".equalsIgnoreCase(payloadState)) {
+                    return awaitCollectorCompletion(provider, url, body, payload, attempt);
+                }
                 if (!"SUCCESS".equalsIgnoreCase(payloadStatus)) {
                     if (isRetryableCollectorStatus(payloadStatus) && attempt < COLLECTOR_PROXY_ATTEMPTS) {
                         sleep(attempt * 3500L);
@@ -717,6 +723,126 @@ public class CloudSightHybridClient {
                 "attempts", COLLECTOR_PROXY_ATTEMPTS,
                 "error", lastError == null ? "Collector dispatch failed" : lastError.getMessage()
         );
+    }
+
+    private Map<String, Object> awaitCollectorCompletion(
+            String provider,
+            String collectorUrl,
+            Object originalBody,
+            Map<String, Object> acceptedPayload,
+            int postAttempt
+    ) {
+        String jobId = String.valueOf(acceptedPayload.getOrDefault("jobId", ""));
+        String pollUrl = collectorPollUrl(collectorUrl, acceptedPayload);
+
+        if (pollUrl.isBlank()) {
+            return Map.of(
+                    "provider", provider,
+                    "status", "ERROR",
+                    "collectorUrl", collectorUrl,
+                    "attempts", postAttempt,
+                    "error", "Collector accepted the job but did not return a poll URL",
+                    "result", acceptedPayload
+            );
+        }
+
+        HttpEntity<Void> entity = new HttpEntity<>(new HttpHeaders());
+        RestClientException lastError = null;
+        for (int pollAttempt = 1; pollAttempt <= COLLECTOR_STATUS_ATTEMPTS; pollAttempt++) {
+            sleep(collectorPollDelayMs(pollAttempt));
+            try {
+                ResponseEntity<Map> response = restTemplate.exchange(pollUrl, HttpMethod.GET, entity, Map.class);
+                record("hybrid-collector-realtime", "GET", pollUrl, Map.of(), Map.of(
+                        "provider", provider,
+                        "jobId", jobId,
+                        "pollAttempt", pollAttempt
+                ), response.getStatusCode().value(), response.getBody());
+
+                Map<String, Object> payload = response.getBody() == null ? Map.of() : response.getBody();
+                String state = String.valueOf(payload.getOrDefault("state", payload.getOrDefault("status", "UNKNOWN")));
+                if ("ACCEPTED".equalsIgnoreCase(state) || "RUNNING".equalsIgnoreCase(state)) {
+                    continue;
+                }
+
+                Map<String, Object> finalResult = safeMap(payload.get("result"));
+                String finalStatus = finalResult.isEmpty()
+                        ? String.valueOf(payload.getOrDefault("status", "UNKNOWN"))
+                        : String.valueOf(finalResult.getOrDefault("status", payload.getOrDefault("status", "UNKNOWN")));
+                String error = String.valueOf(payload.getOrDefault("error", finalResult.getOrDefault("error", "")));
+
+                return Map.of(
+                        "provider", provider,
+                        "status", finalStatus.toUpperCase(Locale.ROOT),
+                        "collectorUrl", collectorUrl,
+                        "pollUrl", pollUrl,
+                        "jobId", jobId,
+                        "attempts", postAttempt,
+                        "pollAttempts", pollAttempt,
+                        "error", error,
+                        "result", finalResult,
+                        "job", payload
+                );
+            } catch (RestClientException error) {
+                lastError = error;
+                record("hybrid-collector-realtime", "GET", pollUrl, Map.of(), Map.of(
+                        "provider", provider,
+                        "jobId", jobId,
+                        "pollAttempt", pollAttempt
+                ), 0, Map.of("error", error.getMessage()));
+                if (!isRetryableCollectorError(error) && !isCollectorStatusNotFound(error)) {
+                    return Map.of(
+                            "provider", provider,
+                            "status", "ERROR",
+                            "collectorUrl", collectorUrl,
+                            "pollUrl", pollUrl,
+                            "jobId", jobId,
+                            "attempts", postAttempt,
+                            "pollAttempts", pollAttempt,
+                            "error", error.getMessage(),
+                            "result", acceptedPayload
+                    );
+                }
+            }
+        }
+
+        return Map.of(
+                "provider", provider,
+                "status", "PENDING",
+                "collectorUrl", collectorUrl,
+                "pollUrl", pollUrl,
+                "jobId", jobId,
+                "attempts", postAttempt,
+                "pollAttempts", COLLECTOR_STATUS_ATTEMPTS,
+                "error", lastError == null ? "Collector job is still running" : lastError.getMessage(),
+                "result", acceptedPayload
+        );
+    }
+
+    private String collectorPollUrl(String collectorUrl, Map<String, Object> payload) {
+        Object direct = payload.get("pollUrl");
+        if (direct != null && !String.valueOf(direct).isBlank()) {
+            return String.valueOf(direct);
+        }
+        Object relative = payload.get("pollPath");
+        if (relative == null || String.valueOf(relative).isBlank()) {
+            return "";
+        }
+        return URI.create(collectorUrl.replaceAll("/$", "") + "/")
+                .resolve(String.valueOf(relative).replaceFirst("^/", ""))
+                .toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> safeMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return new LinkedHashMap<>((Map<String, Object>) map);
+        }
+        return Map.of();
+    }
+
+    private long collectorPollDelayMs(int attempt) {
+        long base = COLLECTOR_STATUS_BASE_DELAY_MS + (attempt > 8 ? 1_500L : 0L);
+        return Math.min(4_000L, base);
     }
 
     private Map<String, Object> postUsage(String url, String apiKey, UsageRequest body) {
@@ -1776,6 +1902,15 @@ public class CloudSightHybridClient {
                 || normalized.contains("504")
                 || normalized.contains("BAD GATEWAY")
                 || normalized.contains("TIMED OUT");
+    }
+
+    private boolean isCollectorStatusNotFound(RestClientException error) {
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toUpperCase(Locale.ROOT);
+        return normalized.contains("404");
     }
 
     private boolean isRetryableCollectorStatus(String status) {
