@@ -21,6 +21,7 @@ const usageTableMeta = document.getElementById("usageTableMeta");
 const usageTableBody = document.getElementById("usageTableBody");
 const runStatusBanner = document.getElementById("runStatusBanner");
 const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
+const DEMO_VISIBLE_PROVIDERS = ["AWS", "GCP", "AZURE"];
 
 const state = {
   models: [],
@@ -70,11 +71,19 @@ function shortUrl(value) {
 
 function summaryCards(overview) {
   const collectors = overview.cloudSight?.connections?.collectorSummary || {};
+  const visibleModels = state.models.length ? state.models : buildModels({
+    overview,
+    scenarios: [],
+    liveSetup: overview.liveSetup || [],
+    catalogs: []
+  });
+  const modeledTests = visibleModels.reduce((sum, model) => sum + (model.liveScenario ? 1 : 0) + model.serviceScenarios.length, 0);
+  const liveReadyClouds = visibleModels.filter((model) => model.setup.configured).length;
   return [
-    ["Providers", overview.coverage?.providerCount ?? 4],
-    ["Modeled tests", overview.coverage?.modeledScenarioCount ?? 0],
+    ["Demo clouds", visibleModels.length || DEMO_VISIBLE_PROVIDERS.length],
+    ["Demo tests", modeledTests || 0],
     ["Healthy collectors", collectors.healthyCollectors ?? "—"],
-    ["Live-ready clouds", (overview.liveSetup || []).filter((item) => item.configured).length]
+    ["Live-ready clouds", liveReadyClouds]
   ];
 }
 
@@ -88,7 +97,10 @@ function renderHeroStats(overview) {
 }
 
 function buildModels({ overview, scenarios, liveSetup, catalogs }) {
-  return (overview.collectors || []).map((collector) => {
+  return (overview.collectors || [])
+    .filter((collector) => DEMO_VISIBLE_PROVIDERS.includes(collector.provider))
+    .sort((left, right) => DEMO_VISIBLE_PROVIDERS.indexOf(left.provider) - DEMO_VISIBLE_PROVIDERS.indexOf(right.provider))
+    .map((collector) => {
     const provider = collector.provider;
     const setup = (liveSetup || []).find((item) => item.provider === provider) || {};
     const catalog = (catalogs || []).find((item) => item.provider === provider) || {};
@@ -150,7 +162,7 @@ function renderSelectedProvider() {
   selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof");
   selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
   selectedProviderSummary.textContent = model.setup.configured
-    ? `This cloud is ready for a real provider proof and collector verification.`
+    ? `This cloud is ready for a real provider proof that ends in a stored CloudSight row.`
     : `Collector replay is ready now. Add live credentials later if you want a real provider call.`;
 
   const familyCount = (model.catalog.serviceFamilies || []).length;
@@ -567,41 +579,58 @@ async function runRealtime() {
   const button = document.getElementById("runRealtime");
   state.runningAll = true;
   button.disabled = true;
-  button.textContent = "Running all…";
-  setBanner("Running all collector proofs across every provider. This can take a little while.", "running");
+  button.textContent = "Running demo set…";
+  setBanner("Running the AWS, GCP, and Azure live collector proofs one by one.", "running");
   try {
-    const result = await json("/demo/bootstrap/realtime", { method: "POST" });
-    state.lastRun = result;
-    resultPanel.textContent = JSON.stringify(result, null, 2);
+    const providers = state.models
+      .filter((model) => model.setup.configured && model.liveScenario)
+      .map((model) => model.provider);
+    const results = [];
+    for (const provider of providers) {
+      setBanner(`Running ${provider} live proof through the collector…`, "running");
+      const result = await json(`/demo/live/providers/${provider}/run?verify=true`, { method: "POST" });
+      results.push({
+        provider,
+        liveCall: result.liveCall?.status || "UNKNOWN",
+        dispatch: result.dispatch?.status || result.status || "UNKNOWN",
+        stored: result.dispatch?.result?.response?.stored || 0,
+        verification: result.verification?.status || "UNKNOWN",
+        matched: (result.verification?.matchedLogs || []).length
+      });
+      state.lastRun = result;
+    }
+    const success = results.every((item) => item.liveCall === "SUCCESS" && item.dispatch === "SUCCESS" && item.stored >= 1);
+    resultPanel.textContent = JSON.stringify({ mode: "demo-set", results }, null, 2);
     resultSummary.innerHTML = `
-      <span class="pill pill-ok">${escapeHtml(result.status || "SUCCESS")}</span>
-      <span class="pill">${escapeHtml(result.integrationOption || "realtime")}</span>
+      <span class="pill ${success ? "pill-ok" : "pill-warn"}">${escapeHtml(success ? "SUCCESS" : "PARTIAL")}</span>
+      <span class="pill">${escapeHtml("AWS + GCP + AZURE")}</span>
     `;
     renderResultNarrative({
-      dispatch: { status: result.status || "SUCCESS" },
-      verification: { status: result.workspaceAuth?.status || "SKIPPED" }
-    }, getSelectedScenario() || { serviceFamily: "Realtime collectors" });
+      dispatch: { status: success ? "SUCCESS" : "PARTIAL" },
+      verification: { status: success ? "SUCCESS" : "WARN" },
+      liveCall: { status: success ? "SUCCESS" : "PARTIAL" }
+    }, getSelectedScenario() || { serviceFamily: "Live demo set", provider: "Multi-cloud" });
     const scenario = getSelectedScenario();
-    if (scenario) {
-      renderFlowExplanation(scenario, result);
-      renderUsageTable(result, scenario);
-      renderRunReadback(result, scenario);
+    if (scenario && state.lastRun) {
+      renderFlowExplanation(scenario, state.lastRun);
+      renderUsageTable(state.lastRun, scenario);
+      renderRunReadback(state.lastRun, scenario);
     }
     await loadAll();
     setBanner(
-      result.status === "SUCCESS"
-        ? "All collector proofs finished successfully."
-        : "Collector proofs finished, but some providers need another retry.",
-      result.status === "SUCCESS" ? "success" : "warn"
+      success
+        ? "AWS, GCP, and Azure all stored rows in CloudSight successfully."
+        : "The demo set finished, but one or more providers need another retry.",
+      success ? "success" : "warn"
     );
   } catch (error) {
     renderResultNarrative({ status: "ERROR" }, getSelectedScenario() || { serviceFamily: "Realtime collectors" });
     resultPanel.textContent = error.stack || String(error);
-    setBanner("Running all collectors failed. Please retry once the throttling settles.", "error");
+    setBanner("Running the AWS/GCP/Azure demo set failed. Please retry.", "error");
   } finally {
     state.runningAll = false;
     button.disabled = false;
-    button.textContent = "Run all collectors";
+    button.textContent = "Run demo set";
   }
 }
 
@@ -614,12 +643,12 @@ function renderOverviewCards(overview) {
   const note = overview.cloudSight?.message || "";
   readbackNote.innerHTML = `
     <div class="readback-pill ${authState === "CONNECTED" ? "ok" : authState === "DEGRADED" ? "warn" : "neutral"}">
-      ${escapeHtml(authState === "CONNECTED" ? "Live product readback" : authState === "DEGRADED" ? "Showing cached CloudSight snapshot" : "Workspace readback optional")}
+      ${escapeHtml(authState === "CONNECTED" ? "Live product readback" : authState === "DEGRADED" ? "Cached product snapshot" : "Collector-first demo mode")}
     </div>
     <p>${escapeHtml(note || `Readback mode: ${mode}`)}</p>
   `;
   const cards = [
-    ["Workspace readback", authState === "CONNECTED" ? "Live" : authState === "DEGRADED" ? "Cached" : "Optional"],
+    ["Demo mode", authState === "CONNECTED" ? "Live + workspace" : authState === "DEGRADED" ? "Collector + cached" : "Collector confirmed"],
     ["Current spend", dashboard.currentSpend ?? "—"],
     ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
     ["Providers connected", connections.providersConnected ?? "—"]
@@ -696,7 +725,7 @@ async function loadAll() {
 
   state.models = buildModels({ overview, scenarios, liveSetup, catalogs });
 
-  if (!state.selectedProvider && state.models.length) {
+  if ((!state.selectedProvider || !state.models.some((model) => model.provider === state.selectedProvider)) && state.models.length) {
     state.selectedProvider = state.models[0].provider;
   }
 

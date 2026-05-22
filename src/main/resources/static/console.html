@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Hybrid POC Console</title>
-  <link rel="stylesheet" href="./console.css?v=10">
+  <link rel="stylesheet" href="./console.css?v=11">
 </head>
 <body>
   <div class="shell">
@@ -13,12 +13,12 @@
         <div class="eyebrow">Dargio CloudSight POC</div>
         <h1>Multi-cloud test playground</h1>
         <p class="hero-text">
-          Pick any cloud service on the left, run a proof, and watch how CloudSight captures, normalizes,
-          prices, and explains the event on the right.
+          Run live collector-first proofs for AWS, GCP, and Azure. Each test makes a real provider call,
+          passes through the matching collector, and shows the stored CloudSight row on the right.
         </p>
       </div>
       <div class="top-actions">
-        <button id="runRealtime" class="btn btn-primary">Run all collectors</button>
+        <button id="runRealtime" class="btn btn-primary">Run demo set</button>
         <button id="refreshOverview" class="btn btn-secondary">Refresh</button>
         <a class="btn btn-secondary" href="https://dargio-cloudsight-ui.onrender.com/" target="_blank" rel="noreferrer">Open CloudSight</a>
       </div>
@@ -65,7 +65,7 @@
           <div>
             <div class="panel-label">Step 2</div>
             <h2>Run the proof</h2>
-            <p class="muted">Each run makes a real provider call or a collector replay, then forwards the normalized signal into CloudSight.</p>
+            <p class="muted">Each run makes a real provider call or a collector replay, then forwards the normalized signal into CloudSight through the collector.</p>
           </div>
         </div>
 
@@ -97,12 +97,12 @@
           <div>
             <div class="panel-label">Step 3</div>
             <h2>See what CloudSight captured</h2>
-            <p class="muted">Run status, stored usage rows, confirmation, and the audit trail all stay here.</p>
+            <p class="muted">Run status, stored usage rows, collector-confirmed proof, and the audit trail all stay here.</p>
           </div>
         </div>
 
         <div id="runStatusBanner" class="status-banner status-banner-idle">
-          Choose a service on the left, then run it to watch the provider call, collector dispatch, and CloudSight readback.
+          Choose a service on the left, then run it to watch the provider call, collector dispatch, and the stored CloudSight row.
         </div>
 
           <section class="response-card">
@@ -172,6 +172,6 @@
     </main>
   </div>
 
-  <script src="./console.js?v=10" defer></script>
+  <script src="./console.js?v=11" defer></script>
 </body>
 </html>
