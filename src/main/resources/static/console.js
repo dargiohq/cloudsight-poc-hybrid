@@ -251,7 +251,9 @@ function buildFlowItems(scenario, result) {
     {
       title: "Verification",
       body: verification?.status && verification.status !== "SKIPPED"
-        ? `CloudSight verification returned ${verification.status}.`
+        ? verification?.fallback
+          ? "CloudSight confirmed the stored row directly from the collector response while broader workspace readback catches up."
+          : `CloudSight verification returned ${verification.status}.`
         : "The verification step checks usage, dashboard, or report readback for the matching entry."
     }
   ];
@@ -471,7 +473,7 @@ function renderRunReadback(result, scenario) {
   `;
 
   const cards = [
-    ["Confirmation mode", verificationStatus === "SUCCESS" ? "Live" : hasStoredDispatchRow ? "Stored" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
+    ["Confirmation mode", verification?.fallback ? "Collector confirmed" : verificationStatus === "SUCCESS" ? "Live" : hasStoredDispatchRow ? "Stored" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
     ["Matched endpoint", hasLatestLog ? (latestLog.inputEndpoint || scenario.primaryEndpoint || "—") : hasStoredDispatchRow ? (dispatchRows[0].inputEndpoint || scenario.primaryEndpoint || "—") : (scenario.primaryEndpoint || "—")],
     ["Latest row cost", hasLatestLog ? String(latestLog.calculatedCost ?? latestLog.estimatedCost ?? "—") : hasStoredDispatchRow ? String(dispatchRows[0].calculatedCost ?? "—") : "—"],
     ["Latest row time", hasLatestLog ? String(latestLog.timestamp || latestLog.createdAt || "—") : hasStoredDispatchRow ? String(dispatchRows[0].timestamp || "—") : "—"]
