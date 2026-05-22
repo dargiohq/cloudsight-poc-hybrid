@@ -612,12 +612,12 @@ function renderOverviewCards(overview) {
   const note = overview.cloudSight?.message || "";
   readbackNote.innerHTML = `
     <div class="readback-pill ${authState === "CONNECTED" ? "ok" : authState === "DEGRADED" ? "warn" : "neutral"}">
-      ${escapeHtml(authState === "CONNECTED" ? "Live product readback" : authState === "DEGRADED" ? "Showing cached CloudSight snapshot" : "Product readback deferred")}
+      ${escapeHtml(authState === "CONNECTED" ? "Live product readback" : authState === "DEGRADED" ? "Showing cached CloudSight snapshot" : "Workspace readback optional")}
     </div>
     <p>${escapeHtml(note || `Readback mode: ${mode}`)}</p>
   `;
   const cards = [
-    ["Workspace snapshot", authState === "CONNECTED" ? "Live" : authState === "DEGRADED" ? "Cached" : "Optional"],
+    ["Workspace readback", authState === "CONNECTED" ? "Live" : authState === "DEGRADED" ? "Cached" : "Optional"],
     ["Current spend", dashboard.currentSpend ?? "—"],
     ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
     ["Providers connected", connections.providersConnected ?? "—"]

@@ -52,7 +52,7 @@ public class CloudSightHybridClient {
     private static final int COLLECTOR_PROXY_ATTEMPTS = 6;
     private static final int COLLECTOR_STATUS_ATTEMPTS = 90;
     private static final long COLLECTOR_STATUS_BASE_DELAY_MS = 1_500L;
-    private static final int COLLECTOR_WAKE_ATTEMPTS = 20;
+    private static final int COLLECTOR_WAKE_ATTEMPTS = 40;
     private static final long COLLECTOR_WAKE_DELAY_MS = 3_000L;
     private static final int CLOUDSIGHT_VERIFY_ATTEMPTS = 8;
     private static final int COLLECTOR_READBACK_ATTEMPTS = 8;
