@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Hybrid POC Console</title>
-  <link rel="stylesheet" href="./console.css?v=6">
+  <link rel="stylesheet" href="./console.css?v=7">
 </head>
 <body>
   <div class="shell">
@@ -105,17 +105,20 @@
           Choose a service on the left, then run it to watch the provider call, collector dispatch, and CloudSight readback.
         </div>
 
-        <section class="response-card">
-          <div class="section-head">
-            <div>
-              <div class="panel-label">CloudSight output</div>
-              <h3>Result details</h3>
+          <section class="response-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">CloudSight output</div>
+                <h3>Result details</h3>
+              </div>
             </div>
-          </div>
-          <div id="resultSummary" class="result-summary"></div>
-          <div id="resultNarrative" class="result-narrative"></div>
-          <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
-        </section>
+            <div id="resultSummary" class="result-summary"></div>
+            <div id="resultNarrative" class="result-narrative"></div>
+            <details class="raw-response-details">
+              <summary>Show raw CloudSight JSON</summary>
+              <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
+            </details>
+          </section>
 
         <div class="response-lower-grid">
           <section class="response-card usage-card">
@@ -169,6 +172,6 @@
     </main>
   </div>
 
-  <script src="./console.js?v=6" defer></script>
+  <script src="./console.js?v=7" defer></script>
 </body>
 </html>

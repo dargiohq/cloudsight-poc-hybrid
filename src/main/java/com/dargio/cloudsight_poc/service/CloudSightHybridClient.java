@@ -1250,7 +1250,7 @@ public class CloudSightHybridClient {
             return fallbackVerificationFromDispatch(
                     scenario,
                     dispatch,
-                    "CloudSight stored the collector row, but direct readback is still catching up.",
+                    "CloudSight stored the collector row successfully. The usage table below is showing the stored row while full workspace readback catches up.",
                     lastError == null ? "Collector readback returned no matching rows yet." : lastError.getMessage()
             );
         }

@@ -29,7 +29,7 @@ body {
 }
 
 .shell {
-  width: min(1580px, calc(100vw - 32px));
+  width: min(1760px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 20px 0 32px;
 }
@@ -150,7 +150,7 @@ h3 {
 
 .playground-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 320px) minmax(320px, 380px) minmax(620px, 1fr);
+  grid-template-columns: minmax(280px, 300px) minmax(300px, 340px) minmax(780px, 1.35fr);
   gap: 18px;
   align-items: start;
 }
@@ -385,7 +385,7 @@ h3 {
 
 .response-lower-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.85fr);
   gap: 14px;
 }
 
@@ -447,7 +447,7 @@ h3 {
 .result-panel {
   margin: 0;
   overflow: auto;
-  max-height: 220px;
+  max-height: 280px;
   border-radius: 20px;
   padding: 16px;
   background: #04101f;
@@ -456,6 +456,30 @@ h3 {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.raw-response-details {
+  margin-top: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(4, 16, 31, 0.52);
+  overflow: hidden;
+}
+
+.raw-response-details summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.raw-response-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.raw-response-details[open] summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .overview-grid {
@@ -535,8 +559,8 @@ h3 {
 }
 
 .usage-table-wrap {
-  min-height: 440px;
-  max-height: 620px;
+  min-height: 500px;
+  max-height: 700px;
   overflow: auto;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.06);

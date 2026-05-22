@@ -327,13 +327,13 @@ function renderResultNarrative(result, scenario) {
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && verificationStatus === "SUCCESS") {
     message = "The real provider call succeeded, the collector stored the signal in CloudSight, and the matching row was confirmed.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
-    message = "The real provider call succeeded and the collector delivered the signal to CloudSight successfully.";
+    message = "The real provider call succeeded, the collector stored the signal, and the usage table below is showing the stored row.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
     message = "The real provider call succeeded, but CloudSight throttled the collector dispatch. Wait a few seconds and retry.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "ERROR") {
     message = "The real provider call succeeded, but the collector dispatch failed before CloudSight could store the signal.";
   } else if (dispatchStatus === "SUCCESS") {
-    message = "The collector replay succeeded and CloudSight accepted the signal.";
+    message = "The collector replay succeeded, and the usage table below is showing the stored row.";
   } else if (verificationStatus === "RATE_LIMITED") {
     message = "The proof ran, but workspace readback was throttled, so the product confirmation view is temporarily delayed.";
   }
@@ -407,7 +407,7 @@ function renderUsageTable(result, scenario) {
 
   if (readbackRows.length) {
     usageTableMeta.textContent = result?.verification?.fallback
-      ? `Showing the latest ${rows.length} captured row${rows.length === 1 ? "" : "s"} confirmed by the collector relay for ${scenario.primaryEndpoint}.`
+      ? `Showing the latest ${rows.length} stored row${rows.length === 1 ? "" : "s"} confirmed directly by the collector response for ${scenario.primaryEndpoint}.`
       : `Showing the latest ${rows.length} CloudSight row${rows.length === 1 ? "" : "s"} matching ${scenario.primaryEndpoint}. The newest match is highlighted.`;
   } else {
     usageTableMeta.textContent = `Showing the stored collector response row${rows.length === 1 ? "" : "s"} while direct CloudSight readback catches up for ${scenario.primaryEndpoint}.`;
@@ -447,11 +447,11 @@ function renderRunReadback(result, scenario) {
   if (verificationStatus === "SUCCESS" && hasLatestLog) {
     title = verification.fallback ? "Collector relay confirmed capture" : "Current run confirmed in CloudSight";
     note = verification.fallback
-      ? `The collector relay returned a stored ${scenario.primaryEndpoint} row for this run.`
+      ? `The collector returned a stored ${scenario.primaryEndpoint} row for this run, and the usage table below is showing it now.`
       : `CloudSight returned a matching ${scenario.primaryEndpoint} row for this run.`;
   } else if (dispatchStatus === "SUCCESS" && hasStoredDispatchRow) {
     title = "CloudSight stored the row";
-    note = "The collector response already includes the stored CloudSight row for this run. Direct product readback is still catching up.";
+    note = "The collector response already includes the stored CloudSight row for this run. The usage table below is using that stored row while product-wide readback catches up.";
   } else if (dispatchStatus === "SUCCESS") {
     title = "Collector delivered the signal";
     note = "CloudSight accepted the collector dispatch. Product readback is still polling for the newest row.";
