@@ -852,19 +852,25 @@ public class CloudSightHybridClient {
 
     private void ensureCollectorReady(String provider, String collectorUrl) {
         String healthUrl = collectorUrl.replaceAll("/$", "") + "/health";
-        HttpEntity<Void> entity = new HttpEntity<>(new HttpHeaders());
-        RestClientException lastError = null;
+        Exception lastError = null;
         for (int attempt = 1; attempt <= COLLECTOR_WAKE_ATTEMPTS; attempt++) {
             try {
-                ResponseEntity<String> response = restTemplate.exchange(healthUrl, HttpMethod.GET, entity, String.class);
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(healthUrl))
+                        .timeout(java.time.Duration.ofMillis(Math.min(READ_TIMEOUT_MS, 15_000)))
+                        .header("Accept", "application/json")
+                        .GET()
+                        .build();
+                HttpResponse<String> response = send(request, "collector-ready");
                 record("hybrid-collector-warmup", "GET", healthUrl, Map.of(), Map.of(
                         "provider", provider,
                         "attempt", attempt
-                ), response.getStatusCode().value(), response.getBody());
-                if (response.getStatusCode().is2xxSuccessful()) {
+                ), response.statusCode(), truncate(response.body()));
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
                     return;
                 }
-            } catch (RestClientException error) {
+                lastError = new IllegalStateException("Collector health returned " + response.statusCode());
+            } catch (Exception error) {
                 lastError = error;
                 record("hybrid-collector-warmup", "GET", healthUrl, Map.of(), Map.of(
                         "provider", provider,
