@@ -1,4 +1,5 @@
 name: Deploy Oracle POC
+# Manual fallback workflow; Oracle repo watcher now handles routine auto deploys.
 
 on:
   push:
