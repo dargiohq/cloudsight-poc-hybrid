@@ -13,6 +13,7 @@ const flowSteps = document.getElementById("flowSteps");
 const resultSummary = document.getElementById("resultSummary");
 const resultNarrative = document.getElementById("resultNarrative");
 const resultPanel = document.getElementById("resultPanel");
+const responseTabBar = document.getElementById("responseTabBar");
 const overviewGrid = document.getElementById("overviewGrid");
 const readbackNote = document.getElementById("readbackNote");
 const auditPanel = document.getElementById("auditPanel");
@@ -20,8 +21,13 @@ const auditMatchSummary = document.getElementById("auditMatchSummary");
 const usageTableMeta = document.getElementById("usageTableMeta");
 const usageTableBody = document.getElementById("usageTableBody");
 const runStatusBanner = document.getElementById("runStatusBanner");
-const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
+const API_BASE = window.location.protocol === "file:" ? "https://poc.cloudsight.dargio.in" : "";
 const DEMO_VISIBLE_PROVIDERS = ["AWS", "GCP", "AZURE"];
+const RESPONSE_TABS = [
+  { id: "captured", label: "Captured rows" },
+  { id: "audit", label: "Audit trail" },
+  { id: "raw", label: "Raw JSON" }
+];
 
 const state = {
   models: [],
@@ -29,7 +35,8 @@ const state = {
   selectedScenarioId: null,
   lastRun: null,
   loadingScenarioId: null,
-  runningAll: false
+  runningAll: false,
+  activeResponseTab: "captured"
 };
 
 document.getElementById("refreshOverview").addEventListener("click", loadAll);
@@ -67,6 +74,28 @@ function shortUrl(value) {
   } catch (error) {
     return String(value ?? "—");
   }
+}
+
+function renderResponseTabs() {
+  responseTabBar.innerHTML = RESPONSE_TABS.map((tab) => `
+    <button class="response-tab ${state.activeResponseTab === tab.id ? "active" : ""}" data-response-tab="${tab.id}">
+      ${escapeHtml(tab.label)}
+    </button>
+  `).join("");
+
+  responseTabBar.querySelectorAll("[data-response-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeResponseTab = button.dataset.responseTab;
+      syncResponsePanes();
+    });
+  });
+}
+
+function syncResponsePanes() {
+  renderResponseTabs();
+  document.querySelectorAll(".response-pane").forEach((pane) => {
+    pane.hidden = pane.dataset.pane !== state.activeResponseTab;
+  });
 }
 
 function summaryCards(overview) {
@@ -167,21 +196,17 @@ function renderSelectedProvider() {
 
   const familyCount = (model.catalog.serviceFamilies || []).length;
   selectedProviderMeta.innerHTML = `
-    <div class="provider-summary-card">
-      <div class="provider-summary-row">
-        <div class="provider-summary-label">Live proof</div>
-        <div class="provider-summary-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
-      </div>
-      <div class="provider-summary-row">
-        <div class="provider-summary-label">Modeled families</div>
-        <div class="provider-summary-value">${escapeHtml(String(familyCount))}</div>
-      </div>
-      <div class="provider-summary-row">
-        <div class="provider-summary-label">Collector endpoint</div>
-        <div class="provider-summary-value">
-          <a href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">Open collector</a>
-        </div>
-      </div>
+    <div class="meta-item">
+      <div class="meta-item-label">Live proof</div>
+      <div class="meta-item-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-item-label">Modeled families</div>
+      <div class="meta-item-value">${escapeHtml(String(familyCount))}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-item-label">Collector endpoint</div>
+      <a class="meta-item-value is-link" href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(model.collector.collectorUrl))}</a>
     </div>
   `;
 
@@ -532,6 +557,8 @@ async function runSelected() {
   }
 
   state.loadingScenarioId = scenario.id;
+  state.activeResponseTab = "captured";
+  syncResponsePanes();
   renderSelectedProvider();
   renderSelectedScenario();
   setBanner(
@@ -555,6 +582,8 @@ async function runSelected() {
     renderRunReadback(result, scenario);
     await loadAudit();
     const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
+    state.activeResponseTab = dispatchStatus === "SUCCESS" ? "captured" : dispatchStatus === "RATE_LIMITED" ? "audit" : "raw";
+    syncResponsePanes();
     setBanner(
       dispatchStatus === "SUCCESS"
         ? `${scenario.serviceFamily} finished successfully. CloudSight accepted the signal.`
@@ -567,6 +596,8 @@ async function runSelected() {
     renderResultNarrative({ status: "ERROR" }, scenario);
     resultPanel.textContent = error.stack || String(error);
     renderUsageTable(null, scenario);
+    state.activeResponseTab = "raw";
+    syncResponsePanes();
     setBanner(`The ${scenario.serviceFamily} run failed before CloudSight could confirm it.`, "error");
   } finally {
     state.loadingScenarioId = null;
@@ -578,6 +609,8 @@ async function runSelected() {
 async function runRealtime() {
   const button = document.getElementById("runRealtime");
   state.runningAll = true;
+  state.activeResponseTab = "captured";
+  syncResponsePanes();
   button.disabled = true;
   button.textContent = "Running demo set…";
   setBanner("Running the AWS, GCP, and Azure live collector proofs one by one.", "running");
@@ -617,6 +650,8 @@ async function runRealtime() {
       renderRunReadback(state.lastRun, scenario);
     }
     await loadAll();
+    state.activeResponseTab = success ? "captured" : "audit";
+    syncResponsePanes();
     setBanner(
       success
         ? "AWS, GCP, and Azure all stored rows in CloudSight successfully."
@@ -626,6 +661,8 @@ async function runRealtime() {
   } catch (error) {
     renderResultNarrative({ status: "ERROR" }, getSelectedScenario() || { serviceFamily: "Realtime collectors" });
     resultPanel.textContent = error.stack || String(error);
+    state.activeResponseTab = "raw";
+    syncResponsePanes();
     setBanner("Running the AWS/GCP/Azure demo set failed. Please retry.", "error");
   } finally {
     state.runningAll = false;
@@ -737,6 +774,7 @@ async function loadAll() {
 
   renderHeroStats(overview);
   renderOverviewCards(overview);
+  syncResponsePanes();
   renderProviderTabs();
   renderSelectedProvider();
   renderSelectedScenario();
