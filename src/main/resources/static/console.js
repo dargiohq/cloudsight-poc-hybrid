@@ -1,3 +1,70 @@
+const API_BASE = window.location.protocol === "file:" ? "https://poc.cloudsight.dargio.in" : "";
+const DEMO_VISIBLE_PROVIDERS = ["AWS", "GCP", "AZURE"];
+const VIEW_IDS = [
+  "overview",
+  "live-test",
+  "captured-rows",
+  "raw-json",
+  "audit-trail",
+  "providers",
+  "api-explorer",
+  "docs",
+  "environment",
+  "help"
+];
+
+const EXPLORER_ENDPOINTS = [
+  {
+    id: "overview",
+    label: "GET /demo/overview",
+    method: "GET",
+    url: "/demo/overview",
+    description: "Returns the live demo snapshot, collector setup, and CloudSight workspace summary."
+  },
+  {
+    id: "captured-rows",
+    label: "GET /demo/captured-rows",
+    method: "GET",
+    url: "/demo/captured-rows",
+    description: "Returns the latest CloudSight usage rows available to the playground."
+  },
+  {
+    id: "scenarios",
+    label: "GET /demo/scenarios",
+    method: "GET",
+    url: "/demo/scenarios",
+    description: "Lists all modeled scenarios and live proofs."
+  },
+  {
+    id: "live-setup",
+    label: "GET /demo/live/setup",
+    method: "GET",
+    url: "/demo/live/setup",
+    description: "Shows live credential readiness for each provider."
+  },
+  {
+    id: "catalogs",
+    label: "GET /demo/catalogs",
+    method: "GET",
+    url: "/demo/catalogs",
+    description: "Shows modeled service-family coverage across the providers."
+  },
+  {
+    id: "audit",
+    label: "GET /demo/audit",
+    method: "GET",
+    url: "/demo/audit",
+    description: "Returns the recent end-to-end audit events recorded by the demo."
+  },
+  {
+    id: "contract",
+    label: "GET /demo/contract",
+    method: "GET",
+    url: "/demo/contract",
+    description: "Shows the collector-first contract, guardrails, and workflow."
+  }
+];
+
 const heroStats = document.getElementById("heroStats");
 const providerTabs = document.getElementById("providerTabs");
 const selectedProviderTitle = document.getElementById("selectedProviderTitle");
@@ -8,49 +75,150 @@ const scenarioList = document.getElementById("scenarioList");
 const selectedScenarioTitle = document.getElementById("selectedScenarioTitle");
 const selectedScenarioSummary = document.getElementById("selectedScenarioSummary");
 const selectedScenarioBadges = document.getElementById("selectedScenarioBadges");
-const runSelectedScenario = document.getElementById("runSelectedScenario");
 const flowSteps = document.getElementById("flowSteps");
+const runSelectedScenario = document.getElementById("runSelectedScenario");
+const runRealtime = document.getElementById("runRealtime");
+const runStatusBanner = document.getElementById("runStatusBanner");
 const resultSummary = document.getElementById("resultSummary");
 const resultNarrative = document.getElementById("resultNarrative");
+const latestRowState = document.getElementById("latestRowState");
+const latestRowDetail = document.getElementById("latestRowDetail");
+const liveAuditTimeline = document.getElementById("liveAuditTimeline");
+const capturedProviderFilter = document.getElementById("capturedProviderFilter");
+const capturedServiceFilter = document.getElementById("capturedServiceFilter");
+const capturedSearchInput = document.getElementById("capturedSearchInput");
+const refreshCapturedRows = document.getElementById("refreshCapturedRows");
+const capturedRowsMeta = document.getElementById("capturedRowsMeta");
+const capturedRowsTableBody = document.getElementById("capturedRowsTableBody");
 const resultPanel = document.getElementById("resultPanel");
-const responseTabBar = document.getElementById("responseTabBar");
-const overviewGrid = document.getElementById("overviewGrid");
-const readbackNote = document.getElementById("readbackNote");
-const auditPanel = document.getElementById("auditPanel");
 const auditMatchSummary = document.getElementById("auditMatchSummary");
-const usageTableMeta = document.getElementById("usageTableMeta");
-const usageTableBody = document.getElementById("usageTableBody");
-const runStatusBanner = document.getElementById("runStatusBanner");
-const API_BASE = window.location.protocol === "file:" ? "https://poc.cloudsight.dargio.in" : "";
-const DEMO_VISIBLE_PROVIDERS = ["AWS", "GCP", "AZURE"];
-const RESPONSE_TABS = [
-  { id: "captured", label: "Captured rows" },
-  { id: "audit", label: "Audit trail" },
-  { id: "raw", label: "Raw JSON" }
-];
+const auditPanel = document.getElementById("auditPanel");
+const refreshAudit = document.getElementById("refreshAudit");
+const providersCollectorCards = document.getElementById("providersCollectorCards");
+const providersCoverageMatrix = document.getElementById("providersCoverageMatrix");
+const explorerMethod = document.getElementById("explorerMethod");
+const explorerEndpointSelect = document.getElementById("explorerEndpointSelect");
+const explorerRequestHelp = document.getElementById("explorerRequestHelp");
+const explorerResponsePanel = document.getElementById("explorerResponsePanel");
+const runApiExplorer = document.getElementById("runApiExplorer");
+const docsWorkflow = document.getElementById("docsWorkflow");
+const docsProviders = document.getElementById("docsProviders");
+const environmentOverview = document.getElementById("environmentOverview");
+const environmentSetupCards = document.getElementById("environmentSetupCards");
+const overviewPopularTests = document.getElementById("overviewPopularTests");
+const overviewRowsPreview = document.getElementById("overviewRowsPreview");
+const overviewAuditPreview = document.getElementById("overviewAuditPreview");
+const sidebarEnvironmentName = document.getElementById("sidebarEnvironmentName");
+const sidebarRegion = document.getElementById("sidebarRegion");
+const regionSelect = document.getElementById("regionSelect");
 
 const state = {
+  contract: null,
+  overview: null,
+  scenarios: [],
+  liveSetup: [],
+  catalogs: [],
   models: [],
   selectedProvider: null,
   selectedScenarioId: null,
-  lastRun: null,
   loadingScenarioId: null,
   runningAll: false,
-  activeResponseTab: "captured"
+  lastRun: null,
+  audit: [],
+  capturedRows: [],
+  capturedRowsSource: "UNAVAILABLE",
+  capturedRowsMessage: "",
+  activeView: initialView(),
+  explorerEndpointId: "overview",
+  explorerResponse: null
 };
 
-document.getElementById("refreshOverview").addEventListener("click", loadAll);
-document.getElementById("refreshAudit").addEventListener("click", loadAudit);
-document.getElementById("runRealtime").addEventListener("click", () => runRealtime());
-runSelectedScenario.addEventListener("click", () => runSelected());
+runRealtime.addEventListener("click", () => runDemoSet());
+runSelectedScenario.addEventListener("click", () => runSelectedScenarioFlow());
+document.getElementById("refreshOverview").addEventListener("click", () => loadAll());
+refreshCapturedRows.addEventListener("click", () => loadCapturedRows());
+refreshAudit.addEventListener("click", () => loadAudit());
+runApiExplorer.addEventListener("click", () => runExplorer());
+explorerEndpointSelect.addEventListener("change", (event) => {
+  state.explorerEndpointId = event.target.value;
+  renderExplorer();
+});
+capturedProviderFilter.addEventListener("change", renderCapturedRowsPage);
+capturedServiceFilter.addEventListener("change", renderCapturedRowsPage);
+capturedSearchInput.addEventListener("input", renderCapturedRowsPage);
 
-async function json(url, options) {
-  const response = await fetch(`${API_BASE}${url}`, options);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`${response.status} ${text || response.statusText}`);
+window.addEventListener("hashchange", () => {
+  state.activeView = initialView();
+  syncViewState();
+});
+
+document.addEventListener("click", (event) => {
+  const viewTrigger = event.target.closest("[data-view-target], [data-view-link]");
+  if (viewTrigger) {
+    const nextView = viewTrigger.dataset.viewTarget || viewTrigger.dataset.viewLink;
+    if (nextView) {
+      activateView(nextView);
+    }
   }
-  return response.json();
+
+  const providerTrigger = event.target.closest("[data-provider-tab]");
+  if (providerTrigger) {
+    state.selectedProvider = providerTrigger.dataset.providerTab;
+    const model = getSelectedModel();
+    state.selectedScenarioId = model?.liveScenario?.id || model?.serviceScenarios?.[0]?.id || null;
+    renderAll();
+  }
+
+  const scenarioTrigger = event.target.closest("[data-scenario-select], [data-scenario-jump]");
+  if (scenarioTrigger) {
+    const scenarioId = scenarioTrigger.dataset.scenarioSelect || scenarioTrigger.dataset.scenarioJump;
+    selectScenarioById(scenarioId);
+    activateView("live-test");
+  }
+});
+
+function initialView() {
+  const hash = window.location.hash.replace("#", "");
+  return VIEW_IDS.includes(hash) ? hash : "overview";
+}
+
+function activateView(viewId) {
+  if (!VIEW_IDS.includes(viewId)) {
+    return;
+  }
+  state.activeView = viewId;
+  history.replaceState(null, "", `#${viewId}`);
+  syncViewState();
+}
+
+function syncViewState() {
+  document.querySelectorAll("[data-view-page]").forEach((page) => {
+    const active = page.dataset.viewPage === state.activeView;
+    page.hidden = !active;
+    page.classList.toggle("is-active", active);
+  });
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    const active = item.dataset.viewTarget === state.activeView;
+    item.classList.toggle("is-active", active);
+  });
+}
+
+async function json(url, options = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${API_BASE}${url}`, {
+      ...options,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`${response.status} ${text || response.statusText}`);
+    }
+    return response.json();
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 function escapeHtml(value) {
@@ -63,110 +231,74 @@ function escapeHtml(value) {
 }
 
 function formatCount(value) {
-  const number = Number(value || 0);
-  return Number.isFinite(number) ? number.toLocaleString() : String(value ?? "—");
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? number.toLocaleString() : String(value ?? "-");
+}
+
+function formatMoney(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return String(value ?? "-");
+  }
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: numeric < 1 ? 4 : 2,
+    maximumFractionDigits: numeric < 1 ? 4 : 2
+  }).format(numeric);
 }
 
 function shortUrl(value) {
   try {
-    const url = new URL(String(value));
-    return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
+    const parsed = new URL(String(value));
+    return `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`;
   } catch (error) {
-    return String(value ?? "—");
+    return String(value ?? "-");
   }
 }
 
-function renderResponseTabs() {
-  responseTabBar.innerHTML = RESPONSE_TABS.map((tab) => `
-    <button class="response-tab ${state.activeResponseTab === tab.id ? "active" : ""}" data-response-tab="${tab.id}">
-      ${escapeHtml(tab.label)}
-    </button>
-  `).join("");
-
-  responseTabBar.querySelectorAll("[data-response-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeResponseTab = button.dataset.responseTab;
-      syncResponsePanes();
-    });
-  });
+function providerCode(provider) {
+  return provider === "AZURE" ? "Azure" : provider;
 }
 
-function syncResponsePanes() {
-  renderResponseTabs();
-  document.querySelectorAll(".response-pane").forEach((pane) => {
-    pane.hidden = pane.dataset.pane !== state.activeResponseTab;
-  });
-}
-
-function summaryCards(overview) {
-  const collectors = overview.cloudSight?.connections?.collectorSummary || {};
-  const visibleModels = state.models.length ? state.models : buildModels({
-    overview,
-    scenarios: [],
-    liveSetup: overview.liveSetup || [],
-    catalogs: []
-  });
-  const modeledTests = visibleModels.reduce((sum, model) => sum + (model.liveScenario ? 1 : 0) + model.serviceScenarios.length, 0);
-  const liveReadyClouds = visibleModels.filter((model) => model.setup.configured).length;
-  return [
-    ["Demo clouds", visibleModels.length || DEMO_VISIBLE_PROVIDERS.length],
-    ["Demo tests", modeledTests || 0],
-    ["Healthy collectors", collectors.healthyCollectors ?? "—"],
-    ["Live-ready clouds", liveReadyClouds]
-  ];
-}
-
-function renderHeroStats(overview) {
-  heroStats.innerHTML = summaryCards(overview).map(([label, value]) => `
-    <div class="stat-card">
-      <div class="label">${label}</div>
-      <div class="value">${formatCount(value)}</div>
-    </div>
-  `).join("");
+function statusClass(status) {
+  if (/SUCCESS|READY|LIVE|STORED|CONNECTED/i.test(status || "")) {
+    return "pill-ok";
+  }
+  if (/WARN|PENDING|DEFERRED|SKIPPED|RATE/i.test(status || "")) {
+    return "pill-warn";
+  }
+  if (/ERROR|FAIL/i.test(status || "")) {
+    return "pill-error";
+  }
+  return "";
 }
 
 function buildModels({ overview, scenarios, liveSetup, catalogs }) {
-  return (overview.collectors || [])
-    .filter((collector) => DEMO_VISIBLE_PROVIDERS.includes(collector.provider))
-    .sort((left, right) => DEMO_VISIBLE_PROVIDERS.indexOf(left.provider) - DEMO_VISIBLE_PROVIDERS.indexOf(right.provider))
-    .map((collector) => {
-    const provider = collector.provider;
-    const setup = (liveSetup || []).find((item) => item.provider === provider) || {};
-    const catalog = (catalogs || []).find((item) => item.provider === provider) || {};
-    const providerScenarios = (scenarios || []).filter((item) => item.provider === provider);
-    const liveScenario = providerScenarios.find((item) => item.executionMode === "live-provider-call") || null;
-    const serviceScenarios = providerScenarios.filter((item) => item.executionMode !== "live-provider-call");
+  return DEMO_VISIBLE_PROVIDERS.map((provider) => {
+    const providerScenarios = scenarios.filter((scenario) => scenario.provider === provider);
+    if (!providerScenarios.length) {
+      return null;
+    }
+
+    const liveScenario = providerScenarios.find((scenario) => scenario.executionMode === "live-provider-call") || null;
+    const serviceScenarios = providerScenarios.filter((scenario) => scenario.executionMode !== "live-provider-call");
+    const collectorInfo = (overview?.collectors || []).find((collector) => collector.provider === provider) || {};
+    const setup = liveSetup.find((item) => item.provider === provider) || {};
+    const catalog = catalogs.find((item) => item.provider === provider) || { serviceFamilies: [] };
+    const collectorUrl = liveScenario?.collectorUrl || serviceScenarios[0]?.collectorUrl || collectorInfo.collectorUrl || "";
+
     return {
       provider,
-      collector,
+      collectorUrl,
+      collectorInfo,
       setup,
       catalog,
       liveScenario,
-      serviceScenarios
+      serviceScenarios,
+      allScenarios: [liveScenario, ...serviceScenarios].filter(Boolean)
     };
-  });
-}
-
-function statusLabel(configured, selectedService) {
-  return configured ? `Live ready: ${selectedService}` : "Collector-ready only";
-}
-
-function renderProviderTabs() {
-  providerTabs.innerHTML = state.models.map((model) => `
-    <button class="provider-tab ${model.provider === state.selectedProvider ? "active" : ""}" data-provider-tab="${model.provider}">
-      ${model.provider}
-    </button>
-  `).join("");
-
-  providerTabs.querySelectorAll("[data-provider-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedProvider = button.dataset.providerTab;
-      const model = getSelectedModel();
-      state.selectedScenarioId = model?.liveScenario?.id || model?.serviceScenarios?.[0]?.id || null;
-      renderSelectedProvider();
-      renderSelectedScenario();
-    });
-  });
+  }).filter(Boolean);
 }
 
 function getSelectedModel() {
@@ -178,218 +310,270 @@ function getSelectedScenario() {
   if (!model) {
     return null;
   }
-  return [model.liveScenario, ...model.serviceScenarios].find((scenario) => scenario?.id === state.selectedScenarioId) || model.liveScenario || model.serviceScenarios[0] || null;
+  return model.allScenarios.find((scenario) => scenario.id === state.selectedScenarioId) || model.liveScenario || model.allScenarios[0] || null;
 }
 
-function renderSelectedProvider() {
-  const model = getSelectedModel();
-  if (!model) {
+function selectScenarioById(scenarioId) {
+  const match = state.models.flatMap((model) => model.allScenarios.map((scenario) => ({ model, scenario })))
+    .find((item) => item.scenario.id === scenarioId);
+  if (!match) {
     return;
   }
+  state.selectedProvider = match.model.provider;
+  state.selectedScenarioId = match.scenario.id;
+  renderAll();
+}
 
-  selectedProviderTitle.textContent = model.provider;
-  selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof");
-  selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
-  selectedProviderSummary.textContent = model.setup.configured
-    ? `This cloud is ready for a real provider proof that ends in a stored CloudSight row.`
-    : `Collector replay is ready now. Add live credentials later if you want a real provider call.`;
+function summaryCards() {
+  const modeledTests = state.models.reduce((sum, model) => sum + model.allScenarios.length, 0);
+  const healthyCollectors = state.models.filter((model) => model.collectorUrl).length;
+  const liveReadyClouds = state.models.filter((model) => model.setup.configured).length;
+  return [
+    ["Demo clouds", state.models.length, state.models.map((model) => providerCode(model.provider)).join(", ")],
+    ["Demo tests", modeledTests, "ready to run"],
+    ["Healthy collectors", healthyCollectors, "live and ready"],
+    ["Live-ready clouds", liveReadyClouds, "ready for proof"]
+  ];
+}
 
-  const familyCount = (model.catalog.serviceFamilies || []).length;
-  selectedProviderMeta.innerHTML = `
-    <div class="meta-item">
-      <div class="meta-item-label">Live proof</div>
-      <div class="meta-item-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
-    </div>
-    <div class="meta-item">
-      <div class="meta-item-label">Modeled families</div>
-      <div class="meta-item-value">${escapeHtml(String(familyCount))}</div>
-    </div>
-    <div class="meta-item">
-      <div class="meta-item-label">Collector endpoint</div>
-      <a class="meta-item-value is-link" href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(model.collector.collectorUrl))}</a>
-    </div>
-  `;
-
-  scenarioList.innerHTML = [model.liveScenario, ...model.serviceScenarios].filter(Boolean).map((scenario) => `
-    <button class="service-button ${scenario.id === state.selectedScenarioId ? "active" : ""} ${scenario.id === state.loadingScenarioId ? "is-running" : ""}" data-scenario-select="${scenario.id}">
-      <div class="service-title-row">
-        <strong>${escapeHtml(scenario.serviceFamily)}</strong>
-        <span class="pill ${scenario.id === state.loadingScenarioId ? "pill-running" : scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">
-          ${escapeHtml(scenario.id === state.loadingScenarioId ? "running" : scenario.executionMode === "live-provider-call" ? "live" : "collector")}
-        </span>
+function renderHeroStats() {
+  heroStats.innerHTML = summaryCards().map(([label, value, hint]) => `
+    <section class="surface-card">
+      <div class="section-head compact-head">
+        <div>
+          <div class="eyebrow">${escapeHtml(label)}</div>
+          <h2>${escapeHtml(formatCount(value))}</h2>
+          <p class="section-copy">${escapeHtml(hint)}</p>
+        </div>
       </div>
-      <div class="service-caption">${escapeHtml(scenario.title)}</div>
+    </section>
+  `).join("");
+}
+
+function renderProviderTabs() {
+  providerTabs.innerHTML = state.models.map((model) => `
+    <button class="provider-tab ${model.provider === state.selectedProvider ? "is-active" : ""}" data-provider-tab="${model.provider}" type="button">
+      ${escapeHtml(providerCode(model.provider))}
     </button>
   `).join("");
-
-  scenarioList.querySelectorAll("[data-scenario-select]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedScenarioId = button.dataset.scenarioSelect;
-      renderSelectedProvider();
-      renderSelectedScenario();
-    });
-  });
 }
 
-function renderSelectedScenario() {
-  const scenario = getSelectedScenario();
+function renderSelectedProviderCard() {
   const model = getSelectedModel();
-  if (!scenario || !model) {
+  if (!model) {
+    selectedProviderTitle.textContent = "Provider";
+    selectedProviderStatus.textContent = "-";
+    selectedProviderSummary.textContent = "No provider is available.";
+    selectedProviderMeta.innerHTML = "";
     return;
   }
 
+  selectedProviderTitle.textContent = providerCode(model.provider);
+  selectedProviderStatus.textContent = model.setup.configured ? `Live ready: ${model.setup.selectedService}` : "Collector-ready";
+  selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
+  selectedProviderSummary.textContent = model.setup.configured
+    ? "This cloud is ready for a real provider proof that ends in a stored CloudSight row."
+    : "Collector replay is ready now. Add live credentials later if you want a real provider call.";
+
+  selectedProviderMeta.innerHTML = `
+    <div class="provider-meta-item">
+      <div class="provider-meta-item-label">Live proof</div>
+      <div class="provider-meta-item-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
+    </div>
+    <div class="provider-meta-item">
+      <div class="provider-meta-item-label">Modeled families</div>
+      <div class="provider-meta-item-value">${escapeHtml(String((model.catalog.serviceFamilies || []).length))}</div>
+    </div>
+    <div class="provider-meta-item">
+      <div class="provider-meta-item-label">Collector endpoint</div>
+      <a class="provider-meta-item-value is-link" href="${escapeHtml(model.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(model.collectorUrl))}</a>
+    </div>
+  `;
+}
+
+function renderScenarioList() {
+  const model = getSelectedModel();
+  if (!model) {
+    scenarioList.innerHTML = "";
+    return;
+  }
+
+  scenarioList.innerHTML = model.allScenarios.map((scenario) => {
+    const active = scenario.id === state.selectedScenarioId;
+    const running = scenario.id === state.loadingScenarioId;
+    const modeLabel = running ? "running" : scenario.executionMode === "live-provider-call" ? "live" : "collector";
+    return `
+      <button class="scenario-card ${active ? "is-active" : ""}" data-scenario-select="${scenario.id}" type="button">
+        <div class="scenario-card-title">
+          <strong>${escapeHtml(scenario.title)}</strong>
+          <span class="pill ${running ? "pill-warn" : scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">${escapeHtml(modeLabel)}</span>
+        </div>
+        <p>${escapeHtml(scenario.realCloudNote || scenario.signalType)}</p>
+      </button>
+    `;
+  }).join("");
+}
+
+function buildFlowItems(scenario, result) {
+  const isLive = scenario?.executionMode === "live-provider-call";
+  const provider = scenario?.provider || "Cloud";
+  const liveCall = result?.liveCall;
+  const dispatch = result?.dispatch;
+  const verification = result?.verification;
+  const latestRow = selectLatestRunRow(result, scenario);
+
+  const items = [
+    {
+      title: "Trigger",
+      body: isLive
+        ? `${providerCode(provider)} made a real provider call for ${scenario.serviceFamily}.`
+        : `${providerCode(provider)} generated a safe provider-native collector payload for ${scenario.serviceFamily}.`
+    },
+    {
+      title: "Collector",
+      body: dispatch?.status === "SUCCESS"
+        ? `The ${providerCode(provider)} collector received the signal and normalized it for CloudSight.`
+        : `The ${providerCode(provider)} collector will receive the signal and normalize it for CloudSight.`
+    },
+    {
+      title: "CloudSight ingestion",
+      body: dispatch?.status === "SUCCESS"
+        ? `CloudSight accepted the normalized payload and stored the matching usage row.`
+        : `CloudSight will store the matching usage row once the collector dispatch completes.`
+    },
+    {
+      title: "Verify",
+      body: verification?.status === "SUCCESS"
+        ? "CloudSight confirmation found the stored row for the current run."
+        : latestRow
+          ? "This page is showing the stored row returned by the collector while product readback catches up."
+          : "The verification step confirms the stored row and current-run audit trail."
+    }
+  ];
+
+  if (liveCall?.resource) {
+    items[0].body += ` Resource proof: ${Object.entries(liveCall.resource).map(([key, value]) => `${key}=${value}`).join(", ")}.`;
+  }
+  return items;
+}
+
+function renderFlowExplanation(result = null) {
+  const scenario = getSelectedScenario();
+  if (!scenario) {
+    flowSteps.innerHTML = "";
+    return;
+  }
+  flowSteps.innerHTML = buildFlowItems(scenario, result).map((item) => `
+    <li>
+      <strong>${escapeHtml(item.title)}</strong>
+      ${escapeHtml(item.body)}
+    </li>
+  `).join("");
+}
+
+function renderSelectedScenarioCard() {
+  const scenario = getSelectedScenario();
+  if (!scenario) {
+    selectedScenarioTitle.textContent = "Select a scenario";
+    selectedScenarioSummary.textContent = "Pick a proof on the left.";
+    selectedScenarioBadges.innerHTML = "";
+    runSelectedScenario.disabled = true;
+    return;
+  }
+
+  const model = getSelectedModel();
+  const running = scenario.id === state.loadingScenarioId;
   selectedScenarioTitle.textContent = scenario.title;
-  selectedScenarioSummary.textContent = scenario.realCloudNote || `Runs the ${scenario.serviceFamily} scenario through the ${model.provider} collector.`;
+  selectedScenarioSummary.textContent = scenario.realCloudNote || `Runs the ${scenario.serviceFamily} scenario through the ${providerCode(model.provider)} collector.`;
   selectedScenarioBadges.innerHTML = `
-    <span class="pill">${escapeHtml(model.provider)}</span>
+    <span class="pill">${escapeHtml(providerCode(scenario.provider))}</span>
     <span class="pill">${escapeHtml(scenario.primaryEndpoint)}</span>
     <span class="pill">${escapeHtml(scenario.signalType)}</span>
     <span class="pill ${scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">${escapeHtml(scenario.executionMode)}</span>
   `;
 
-  runSelectedScenario.disabled = scenario.executionMode === "live-provider-call" && !model.setup.configured;
-  const isRunning = state.loadingScenarioId === scenario.id;
-  runSelectedScenario.disabled = isRunning || (scenario.executionMode === "live-provider-call" && !model.setup.configured);
-  runSelectedScenario.textContent = isRunning
-    ? (scenario.executionMode === "live-provider-call" ? "Running live…" : "Running collector…")
-    : scenario.executionMode === "live-provider-call"
-      ? (model.setup.configured ? "Run live + verify" : "Configure live credentials")
-      : "Run collector test";
-
-  renderFlowExplanation(scenario, null);
+  const liveUnavailable = scenario.executionMode === "live-provider-call" && !model.setup.configured;
+  runSelectedScenario.disabled = running || liveUnavailable;
+  runSelectedScenario.textContent = running
+    ? (scenario.executionMode === "live-provider-call" ? "Running live..." : "Running collector...")
+    : liveUnavailable
+      ? "Configure live credentials"
+      : scenario.executionMode === "live-provider-call"
+        ? "Run live + verify"
+        : "Run collector test";
 }
 
-function buildFlowItems(scenario, result) {
-  const provider = scenario.provider;
-  const isLive = scenario.executionMode === "live-provider-call";
-  const liveCall = result?.liveCall;
-  const dispatch = result?.dispatch;
-  const verification = result?.verification;
-
-  const steps = [
-    {
-      title: "Trigger",
-      body: isLive
-        ? `${provider} made a real provider call for ${scenario.serviceFamily}.`
-        : `${provider} generated a safe provider-native collector payload for ${scenario.serviceFamily}.`
-    },
-    {
-      title: "Collector",
-      body: dispatch?.collectorUrl
-        ? `The ${provider} collector received the signal and normalized it before sending it to CloudSight.`
-        : `The ${provider} collector will normalize this signal into CloudSight endpoints.`
-    },
-    {
-      title: "CloudSight ingestion",
-      body: dispatch?.result?.stored
-        ? `CloudSight accepted ${dispatch.result.stored} event(s) and stored the normalized usage row.`
-        : `CloudSight will store the matching usage row once the collector dispatch completes.`
-    },
-    {
-      title: "Verification",
-      body: verification?.status && verification.status !== "SKIPPED"
-        ? verification?.fallback
-          ? "CloudSight confirmed the stored row for this exact run through collector-backed confirmation."
-          : `CloudSight verification returned ${verification.status}.`
-        : "The verification step checks usage, dashboard, or report readback for the matching entry."
+function renderOverviewPopularTests() {
+  const featured = state.models.flatMap((model) => {
+    const picks = [];
+    if (model.liveScenario) {
+      picks.push(model.liveScenario);
     }
-  ];
+    if (model.serviceScenarios.length) {
+      picks.push(model.serviceScenarios[0]);
+    }
+    return picks;
+  }).slice(0, 6);
 
-  if (liveCall?.resource) {
-    steps[0].body += ` Resource proof: ${Object.entries(liveCall.resource).map(([key, value]) => `${key}=${value}`).join(", ")}.`;
-  }
-  return steps;
-}
-
-function renderFlowExplanation(scenario, result) {
-  flowSteps.innerHTML = buildFlowItems(scenario, result).map((step) => `
-    <li>
-      <strong>${escapeHtml(step.title)}</strong>
-      ${escapeHtml(step.body)}
-    </li>
-  `).join("");
-}
-
-function renderResultSummary(result, scenario) {
-  if (!result) {
-    resultSummary.innerHTML = `
-      <span class="pill">${escapeHtml(scenario.provider)}</span>
-      <span class="pill">${escapeHtml(scenario.serviceFamily)}</span>
-      <span class="pill">${escapeHtml(scenario.executionMode)}</span>
-    `;
-    return;
-  }
-
-  const dispatch = result.dispatch || {};
-  const verification = result.verification || {};
-  const liveCall = result.liveCall || {};
-  const chips = [
-    scenario.provider,
-    scenario.serviceFamily,
-    dispatch.status || result.status || "PENDING",
-    verification.status || "SKIPPED"
-  ];
-
-  if (liveCall.status) {
-    chips.push(`live:${liveCall.status}`);
-  }
-
-  const storedCount = result?.dispatch?.result?.response?.stored;
-  if (storedCount) {
-    chips.push(`stored:${storedCount}`);
-  }
-
-  resultSummary.innerHTML = chips.map((chip, index) => `
-    <span class="pill ${index >= 2 && /SUCCESS/i.test(chip) ? "pill-ok" : ""}">${escapeHtml(chip)}</span>
-  `).join("");
-}
-
-function renderResultNarrative(result, scenario) {
-  if (!result) {
-    resultNarrative.innerHTML = `
-      <div class="narrative-card">
-        <strong>Ready to run</strong>
-        <p>Use the button above to send the selected ${escapeHtml(scenario.serviceFamily)} proof through the ${escapeHtml(scenario.provider)} flow.</p>
+  overviewPopularTests.innerHTML = featured.map((scenario, index) => `
+    <button class="quick-test-button ${index === 0 ? "is-featured" : ""}" data-scenario-jump="${scenario.id}" type="button">
+      <div class="quick-test-top">
+        <strong>${escapeHtml(scenario.title)}</strong>
+        <span class="pill ${scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">
+          ${escapeHtml(scenario.executionMode === "live-provider-call" ? "Live ready" : "Collector")}
+        </span>
       </div>
-    `;
-    return;
-  }
-
-  const liveStatus = result.liveCall?.status || "SKIPPED";
-  const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
-  const verificationStatus = result.verification?.status || "SKIPPED";
-  const deliveryMode = result.dispatch?.result?.deliveryMode || "";
-  let message = "The run completed.";
-
-  if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && deliveryMode === "COLLECTOR_USAGE_RELAY") {
-    message = "The real provider call succeeded and the collector relayed the normalized row into CloudSight successfully.";
-  } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && verificationStatus === "SUCCESS" && result.verification?.fallback) {
-    message = "The real provider call succeeded, the collector stored the row in CloudSight, and this page is showing the exact captured row for the current run.";
-  } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && verificationStatus === "SUCCESS") {
-    message = "The real provider call succeeded, the collector stored the signal in CloudSight, and the matching row was confirmed.";
-  } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
-    message = "The real provider call succeeded, the collector stored the signal, and the usage table below is showing the captured CloudSight row.";
-  } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
-    message = "The real provider call succeeded, but CloudSight throttled the collector dispatch. Wait a few seconds and retry.";
-  } else if (liveStatus === "SUCCESS" && dispatchStatus === "ERROR") {
-    message = "The real provider call succeeded, but the collector dispatch failed before CloudSight could store the signal.";
-  } else if (dispatchStatus === "SUCCESS") {
-    message = "The collector replay succeeded, and the usage table below is showing the stored row.";
-  } else if (verificationStatus === "RATE_LIMITED") {
-    message = "The proof ran, but workspace readback was throttled, so the product confirmation view is temporarily delayed.";
-  }
-
-  resultNarrative.innerHTML = `
-    <div class="narrative-card">
-      <strong>${escapeHtml(message)}</strong>
-      <p>Live call: ${escapeHtml(liveStatus)}. Collector dispatch: ${escapeHtml(dispatchStatus)}. Product verification: ${escapeHtml(verificationStatus)}.${storedCountText(result)}</p>
-    </div>
-  `;
+      <p>${escapeHtml(providerCode(scenario.provider))}</p>
+    </button>
+  `).join("");
 }
 
-function storedCountText(result) {
-  const stored = result?.dispatch?.result?.response?.stored;
-  return stored ? ` Stored rows: ${escapeHtml(String(stored))}.` : "";
+function normalizeUsageRow(row, fallback = {}) {
+  const primaryUnits = Number(row.inputUnits ?? row.primaryUnits ?? 0);
+  const secondaryUnits = Number(row.outputUnits ?? row.secondaryUnits ?? 0);
+  const sourceParts = [
+    row.sourceReference,
+    row.bucket,
+    row.object,
+    row.bucketName,
+    row.resourceName,
+    row.collectorName,
+    row.deploymentEnvironment
+  ].filter(Boolean);
+  return {
+    key: [
+      row.timestamp || row.createdAt || row.recordedAt || "",
+      row.provider || row.service || fallback.provider || "",
+      row.inputEndpoint || row.primaryEndpoint || fallback.primaryEndpoint || "",
+      sourceParts.join(" ")
+    ].join("|"),
+    timestamp: row.timestamp || row.createdAt || row.recordedAt || "-",
+    provider: row.provider || fallback.provider || inferProvider(row.service || "", row.inputEndpoint || row.primaryEndpoint || ""),
+    service: row.serviceFamily || row.service || fallback.service || fallback.provider || "-",
+    inputEndpoint: row.inputEndpoint || row.primaryEndpoint || fallback.primaryEndpoint || "-",
+    outputEndpoint: row.outputEndpoint || row.secondaryEndpoint || fallback.secondaryEndpoint || "-",
+    units: `${formatCount(primaryUnits)} / ${formatCount(secondaryUnits)}`,
+    inputUnits: primaryUnits,
+    outputUnits: secondaryUnits,
+    cost: row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "-",
+    source: sourceParts[0] || row.regionCode || row.sourceType || "-",
+    status: row.status || "Stored",
+    raw: row
+  };
+}
+
+function inferProvider(service, endpoint) {
+  const value = `${service} ${endpoint}`.toLowerCase();
+  if (value.includes("azure") || value.includes("blob")) {
+    return "AZURE";
+  }
+  if (value.includes("gcp") || value.includes("cloud-storage") || value.includes("bigquery") || value.includes("pubsub")) {
+    return "GCP";
+  }
+  if (value.includes("aws") || value.includes("s3") || value.includes("lambda") || value.includes("dynamodb")) {
+    return "AWS";
+  }
+  return service || "-";
 }
 
 function rowsFromDispatch(result, scenario) {
@@ -397,133 +581,188 @@ function rowsFromDispatch(result, scenario) {
   if (!Array.isArray(rows)) {
     return [];
   }
-  return rows.map((row) => ({
-    timestamp: row.timestamp || "—",
-    service: row.service || scenario.provider,
-    inputEndpoint: row.inputEndpoint || scenario.primaryEndpoint,
-    outputEndpoint: row.outputEndpoint || "—",
-    inputUnits: row.inputUnits || 0,
-    outputUnits: row.outputUnits || 0,
-    calculatedCost: row.calculatedCost ?? "—",
-    collectorName: row.collectorName || "",
-    sourceType: row.sourceType || "",
-    sourceReference: row.sourceReference || "",
-    regionCode: row.regionCode || "",
-    deploymentEnvironment: row.deploymentEnvironment || "",
-    ingestionMode: row.ingestionMode || "COLLECTOR"
+  return rows.map((row) => normalizeUsageRow(row, {
+    provider: scenario?.provider,
+    service: scenario?.serviceFamily,
+    primaryEndpoint: scenario?.primaryEndpoint,
+    secondaryEndpoint: scenario?.secondaryEndpoint
   }));
 }
 
-function statusTone(status) {
-  if (/SUCCESS/i.test(status || "")) {
-    return "ok";
+function rowsFromVerification(result, scenario) {
+  const matched = result?.verification?.matchedLogs;
+  if (Array.isArray(matched) && matched.length) {
+    return matched.map((row) => normalizeUsageRow(row, {
+      provider: scenario?.provider,
+      service: scenario?.serviceFamily,
+      primaryEndpoint: scenario?.primaryEndpoint,
+      secondaryEndpoint: scenario?.secondaryEndpoint
+    }));
   }
-  if (/RATE|WARN|SKIPPED/i.test(status || "")) {
-    return "warn";
-  }
-  return "neutral";
+  return [];
 }
 
-function renderUsageTable(result, scenario) {
-  const matched = result?.verification?.matchedLogs;
-  const readbackRows = Array.isArray(matched)
-    ? matched
-    : result?.verification?.latestLog && Object.keys(result.verification.latestLog).length
-      ? [result.verification.latestLog]
-      : [];
-  const dispatchRows = rowsFromDispatch(result, scenario);
-  const rows = readbackRows.length ? readbackRows : dispatchRows;
+function currentRunRows() {
+  const scenario = getSelectedScenario();
+  if (!state.lastRun || !scenario) {
+    return [];
+  }
+  const verificationRows = rowsFromVerification(state.lastRun, scenario);
+  return verificationRows.length ? verificationRows : rowsFromDispatch(state.lastRun, scenario);
+}
 
-  if (!rows.length) {
-    usageTableMeta.textContent = result?.verification?.status === "RATE_LIMITED"
-      ? "CloudSight usage readback was rate-limited, so the latest matching rows are temporarily unavailable."
-      : `No captured usage rows are available yet for ${scenario?.primaryEndpoint || "this test"}.`;
-    usageTableBody.innerHTML = `
-      <tr>
-        <td colspan="5" class="empty-table">Run a test and this table will highlight the latest CloudSight rows for the selected endpoint.</td>
-      </tr>
+function selectLatestRunRow(result = state.lastRun, scenario = getSelectedScenario()) {
+  const verificationRows = rowsFromVerification(result, scenario);
+  if (verificationRows.length) {
+    return verificationRows[0];
+  }
+  const dispatchRows = rowsFromDispatch(result, scenario);
+  return dispatchRows[0] || null;
+}
+
+function highlightKeys() {
+  return new Set(currentRunRows().map((row) => row.key));
+}
+
+function renderLatestRowCard() {
+  const scenario = getSelectedScenario();
+  const latest = selectLatestRunRow();
+  if (!scenario || !latest) {
+    latestRowState.textContent = "Run a test to show the latest stored row details.";
+    latestRowDetail.innerHTML = `
+      <div class="detail-item">
+        <div class="detail-label">Status</div>
+        <div class="detail-value muted">Waiting for a completed proof.</div>
+      </div>
     `;
     return;
   }
 
-  if (readbackRows.length) {
-    usageTableMeta.textContent = result?.verification?.fallback
-      ? `Showing the latest ${rows.length} stored CloudSight row${rows.length === 1 ? "" : "s"} confirmed for this run on ${scenario.primaryEndpoint}.`
-      : `Showing the latest ${rows.length} CloudSight row${rows.length === 1 ? "" : "s"} matching ${scenario.primaryEndpoint}. The newest match is highlighted.`;
-  } else {
-    usageTableMeta.textContent = `Showing the stored CloudSight row${rows.length === 1 ? "" : "s"} returned by the collector for ${scenario.primaryEndpoint}.`;
-  }
-
-  usageTableBody.innerHTML = rows.map((row, index) => {
-    const primary = row.inputEndpoint || row.primaryEndpoint || "—";
-    const secondary = row.outputEndpoint || row.secondaryEndpoint || "—";
-    const units = `${formatCount(row.inputUnits || row.primaryUnits || 0)} / ${formatCount(row.outputUnits || row.secondaryUnits || 0)}`;
-    const cost = row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—";
-    const when = row.timestamp || row.createdAt || row.recordedAt || "—";
-    return `
-      <tr class="${index === 0 ? "usage-row-highlight" : ""}">
-        <td>${escapeHtml(when)}</td>
-        <td>${escapeHtml(row.service || row.provider || scenario.provider)}</td>
-        <td><strong>${escapeHtml(primary)}</strong><br><span class="usage-secondary">${escapeHtml(secondary)}</span></td>
-        <td>${escapeHtml(units)}</td>
-        <td>${escapeHtml(String(cost))}</td>
-      </tr>
-    `;
-  }).join("");
-}
-
-function renderRunReadback(result, scenario) {
-  const verification = result?.verification || {};
-  const latestLog = verification.latestLog || {};
-  const hasLatestLog = latestLog && Object.keys(latestLog).length > 0;
-  const liveStatus = result?.liveCall?.status || "SKIPPED";
-  const dispatchStatus = result?.dispatch?.status || result?.status || "UNKNOWN";
-  const verificationStatus = verification.status || "SKIPPED";
-  const dispatchRows = rowsFromDispatch(result, scenario);
-  const hasStoredDispatchRow = dispatchRows.length > 0;
-
-  let title = "Run confirmation pending";
-  let note = "CloudSight has not confirmed a matching stored row yet.";
-
-  if (verificationStatus === "SUCCESS" && hasLatestLog) {
-    title = verification.fallback ? "Current run confirmed in CloudSight" : "Current run confirmed in CloudSight";
-    note = verification.fallback
-      ? `The collector returned a stored ${scenario.primaryEndpoint} row for this exact run, and the usage table below is showing it now.`
-      : `CloudSight returned a matching ${scenario.primaryEndpoint} row for this run.`;
-  } else if (dispatchStatus === "SUCCESS" && hasStoredDispatchRow) {
-    title = "CloudSight stored the row";
-    note = "The collector response already includes the stored CloudSight row for this run. The usage table below is using that captured row now.";
-  } else if (dispatchStatus === "SUCCESS") {
-    title = "Collector delivered the signal";
-    note = "CloudSight accepted the collector dispatch. Confirmation is still polling for the newest stored row.";
-  } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
-    title = "Collector dispatch throttled";
-    note = "The real provider call succeeded, but the collector hit rate limiting before CloudSight could confirm the row.";
-  } else if (liveStatus === "SUCCESS" && dispatchStatus === "ERROR") {
-    title = "Collector dispatch failed";
-    note = "The real provider call succeeded, but the collector could not deliver the normalized signal to CloudSight.";
-  }
-
-  readbackNote.innerHTML = `
-    <div class="readback-pill ${verificationStatus === "SUCCESS" ? "ok" : dispatchStatus === "SUCCESS" ? "warn" : "neutral"}">
-      ${escapeHtml(title)}
-    </div>
-    <p>${escapeHtml(note)}</p>
-  `;
-
-  const cards = [
-    ["Confirmation mode", verification?.fallback ? "Collector confirmed" : verificationStatus === "SUCCESS" ? "Live" : hasStoredDispatchRow ? "Stored" : dispatchStatus === "SUCCESS" ? "Pending" : "Deferred"],
-    ["Matched endpoint", hasLatestLog ? (latestLog.inputEndpoint || scenario.primaryEndpoint || "—") : hasStoredDispatchRow ? (dispatchRows[0].inputEndpoint || scenario.primaryEndpoint || "—") : (scenario.primaryEndpoint || "—")],
-    ["Latest row cost", hasLatestLog ? String(latestLog.calculatedCost ?? latestLog.estimatedCost ?? "—") : hasStoredDispatchRow ? String(dispatchRows[0].calculatedCost ?? "—") : "—"],
-    ["Latest row time", hasLatestLog ? String(latestLog.timestamp || latestLog.createdAt || "—") : hasStoredDispatchRow ? String(dispatchRows[0].timestamp || "—") : "—"]
-  ];
-
-  overviewGrid.innerHTML = cards.map(([label, value]) => `
-    <div class="meta-card">
-      <div class="label">${label}</div>
-      <div class="value">${escapeHtml(typeof value === "number" ? formatCount(value) : value)}</div>
+  latestRowState.textContent = "Showing the latest stored row for the selected proof.";
+  latestRowDetail.innerHTML = [
+    ["Time", latest.timestamp],
+    ["Cloud", providerCode(latest.provider)],
+    ["Service", latest.service],
+    ["Endpoint", `${latest.inputEndpoint} / ${latest.outputEndpoint}`],
+    ["Source / Object", latest.source],
+    ["Units", latest.units],
+    ["Cost (est.)", formatMoney(latest.cost)],
+    ["Status", latest.status]
+  ].map(([label, value]) => `
+    <div class="detail-item">
+      <div class="detail-label">${escapeHtml(label)}</div>
+      <div class="detail-value">${escapeHtml(String(value))}</div>
     </div>
   `).join("");
+}
+
+function renderResultSummary(result) {
+  const scenario = getSelectedScenario();
+  if (!scenario) {
+    resultSummary.innerHTML = "";
+    resultNarrative.innerHTML = "";
+    return;
+  }
+
+  if (!result) {
+    resultSummary.innerHTML = `
+      <span class="pill">${escapeHtml(providerCode(scenario.provider))}</span>
+      <span class="pill">${escapeHtml(scenario.serviceFamily)}</span>
+      <span class="pill">${escapeHtml(scenario.executionMode)}</span>
+    `;
+    resultNarrative.innerHTML = `
+      <div class="narrative-card">
+        <strong>Ready to run</strong>
+        <p>Use the button above to send the selected ${escapeHtml(scenario.serviceFamily)} proof through the ${escapeHtml(providerCode(scenario.provider))} collector flow.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
+  const verificationStatus = result.verification?.status || "SKIPPED";
+  const liveStatus = result.liveCall?.status || "SKIPPED";
+  const storedCount = result.dispatch?.result?.response?.stored || 0;
+  const summaryChips = [
+    providerCode(scenario.provider),
+    scenario.serviceFamily,
+    dispatchStatus,
+    verificationStatus
+  ];
+  if (result.liveCall?.status) {
+    summaryChips.push(`live:${liveStatus}`);
+  }
+  if (storedCount) {
+    summaryChips.push(`stored:${storedCount}`);
+  }
+
+  resultSummary.innerHTML = summaryChips.map((chip, index) => `
+    <span class="pill ${index >= 2 ? statusClass(chip) : ""}">${escapeHtml(chip)}</span>
+  `).join("");
+
+  let message = "The run completed.";
+  if (dispatchStatus === "SUCCESS" && verificationStatus === "SUCCESS") {
+    message = "The run completed successfully.";
+  } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
+    message = "The provider call and collector dispatch succeeded.";
+  } else if (dispatchStatus === "RATE_LIMITED") {
+    message = "The provider call worked, but CloudSight throttled the collector dispatch.";
+  } else if (dispatchStatus === "ERROR") {
+    message = "The provider call finished, but the collector could not store the row in CloudSight.";
+  }
+
+  const verificationSource = result.verification?.fallback
+    ? "Confirmation is using collector-backed row evidence while workspace readback catches up."
+    : "Product verification matched the latest stored row.";
+
+  resultNarrative.innerHTML = `
+    <div class="narrative-card">
+      <strong>${escapeHtml(message)}</strong>
+      <p>Live call: ${escapeHtml(liveStatus)}. Collector: ${escapeHtml(dispatchStatus)}. Verification: ${escapeHtml(verificationStatus)}. ${escapeHtml(verificationSource)}</p>
+    </div>
+  `;
+}
+
+function setBanner(text, tone = "idle") {
+  runStatusBanner.className = `status-banner status-banner-${tone}`;
+  runStatusBanner.textContent = text;
+}
+
+function renderLiveAuditTimeline() {
+  const currentRunId = state.lastRun?.runId;
+  const events = currentRunId
+    ? state.audit.filter((event) => event.runId === currentRunId)
+    : state.audit.slice(0, 5);
+
+  if (!events.length) {
+    liveAuditTimeline.innerHTML = `
+      <div class="timeline-item">
+        <div class="timeline-icon">i</div>
+        <div class="timeline-copy">Run a proof to show the current-run audit timeline.</div>
+      </div>
+    `;
+    return;
+  }
+
+  liveAuditTimeline.innerHTML = events.slice(0, 6).map((event) => `
+    <div class="timeline-item">
+      <div class="timeline-icon">${event.responseStatus >= 400 ? "!" : "o"}</div>
+      <div class="timeline-time">${escapeHtml(shortTime(event.recordedAt))}</div>
+      <div class="timeline-stage">${escapeHtml(auditStage(event))}</div>
+      <div class="timeline-copy">${escapeHtml(auditMessage(event))}</div>
+    </div>
+  `).join("");
+}
+
+function shortTime(value) {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function auditStage(event) {
@@ -533,256 +772,512 @@ function auditStage(event) {
   if ((event.url || "").includes("/auth/login")) {
     return "Workspace auth";
   }
+  if ((event.url || "").includes("/api/collector/events")) {
+    return "Stored";
+  }
+  if ((event.url || "").includes("/api/collector/readback")) {
+    return "Verified";
+  }
+  if ((event.url || "").includes("googleapis.com") || (event.url || "").includes("amazonaws.com") || (event.url || "").includes("blob.core.windows.net")) {
+    return "Provider call";
+  }
   if ((event.url || "").includes("/api/usage")) {
-    return "Usage ingestion";
-  }
-  if ((event.url || "").includes("/api/usage/logs") || (event.url || "").includes("/api/usage/summary")) {
-    return "Verification";
-  }
-  if ((event.url || "").includes("/api/dashboard") || (event.url || "").includes("/api/reports")) {
-    return "Readback";
+    return "Usage";
   }
   return "API call";
 }
 
-function setBanner(text, tone = "idle") {
-  runStatusBanner.className = `status-banner status-banner-${tone}`;
-  runStatusBanner.textContent = text;
+function auditMessage(event) {
+  const stage = auditStage(event);
+  if (stage === "Provider call") {
+    return `Called ${shortUrl(event.url || "")} successfully.`;
+  }
+  if (stage === "Collector") {
+    return `Signal was received and normalized by ${event.provider || "the"} collector.`;
+  }
+  if (stage === "Stored") {
+    return "Row was stored in CloudSight.";
+  }
+  if (stage === "Verified") {
+    return "Verification query confirmed the stored row.";
+  }
+  return shortUrl(event.url || "");
 }
 
-async function runSelected() {
+function renderCapturedRowsPage() {
+  const rows = filteredCapturedRows();
+  const highlight = highlightKeys();
+  const sourceLabel = state.capturedRowsSource === "LIVE" ? "live CloudSight readback" : state.capturedRowsSource === "CACHED" ? "cached CloudSight readback" : "collector-backed preview";
+
+  populateCapturedFilters();
+
+  if (!rows.length) {
+    capturedRowsMeta.textContent = state.capturedRowsMessage || "No captured usage rows are available yet.";
+    capturedRowsTableBody.innerHTML = `
+      <tr>
+        <td colspan="8">Run a test and CloudSight rows will appear here.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  capturedRowsMeta.textContent = `Showing ${rows.length} row${rows.length === 1 ? "" : "s"} from ${sourceLabel}. Rows from the current run are highlighted.`;
+  capturedRowsTableBody.innerHTML = rows.map((row) => `
+    <tr class="${highlight.has(row.key) ? "row-highlight" : ""}">
+      <td>${escapeHtml(row.timestamp)}</td>
+      <td>${escapeHtml(providerCode(row.provider))}</td>
+      <td>${escapeHtml(row.service)}</td>
+      <td><strong>${escapeHtml(row.inputEndpoint)}</strong><br><span class="brand-caption">${escapeHtml(row.outputEndpoint)}</span></td>
+      <td>${escapeHtml(row.source)}</td>
+      <td>${escapeHtml(row.units)}</td>
+      <td><span class="row-status"><span class="status-dot"></span>${escapeHtml(row.status)}</span></td>
+      <td>${escapeHtml(formatMoney(row.cost))}</td>
+    </tr>
+  `).join("");
+}
+
+function populateCapturedFilters() {
+  const currentProvider = capturedProviderFilter.value;
+  const currentService = capturedServiceFilter.value;
+  const providers = Array.from(new Set(state.capturedRows.map((row) => providerCode(row.provider)))).sort();
+  const services = Array.from(new Set(state.capturedRows.map((row) => row.service))).sort();
+
+  capturedProviderFilter.innerHTML = `<option value="">All clouds</option>${providers.map((provider) => `<option value="${escapeHtml(provider)}">${escapeHtml(provider)}</option>`).join("")}`;
+  capturedServiceFilter.innerHTML = `<option value="">All services</option>${services.map((service) => `<option value="${escapeHtml(service)}">${escapeHtml(service)}</option>`).join("")}`;
+
+  capturedProviderFilter.value = providers.includes(currentProvider) ? currentProvider : "";
+  capturedServiceFilter.value = services.includes(currentService) ? currentService : "";
+}
+
+function filteredCapturedRows() {
+  const provider = capturedProviderFilter.value.trim().toLowerCase();
+  const service = capturedServiceFilter.value.trim().toLowerCase();
+  const search = capturedSearchInput.value.trim().toLowerCase();
+  return state.capturedRows.filter((row) => {
+    if (provider && providerCode(row.provider).toLowerCase() !== provider) {
+      return false;
+    }
+    if (service && row.service.toLowerCase() !== service) {
+      return false;
+    }
+    if (search) {
+      const haystack = [
+        row.timestamp,
+        row.provider,
+        row.service,
+        row.inputEndpoint,
+        row.outputEndpoint,
+        row.source
+      ].join(" ").toLowerCase();
+      if (!haystack.includes(search)) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+function renderAuditPage() {
+  const currentRunId = state.lastRun?.runId;
+  const matched = currentRunId ? state.audit.filter((event) => event.runId === currentRunId) : [];
+  const ordered = currentRunId
+    ? [...matched, ...state.audit.filter((event) => event.runId !== currentRunId)]
+    : state.audit;
+
+  auditMatchSummary.textContent = currentRunId
+    ? `${matched.length} audit event${matched.length === 1 ? "" : "s"} from the current run are highlighted below.`
+    : "Recent calls will appear here. Matching events from the current run are highlighted.";
+
+  auditPanel.innerHTML = ordered.slice(0, 48).map((event) => `
+    <article class="audit-item ${currentRunId && event.runId === currentRunId ? "audit-item-match" : ""}">
+      <div class="audit-top">
+        <div>
+          <span class="audit-method">${escapeHtml(event.method || "CALL")}</span>
+          <span class="pill ${statusClass(String(event.responseStatus || 0))}">${escapeHtml(auditStage(event))}</span>
+          ${currentRunId && event.runId === currentRunId ? '<span class="pill pill-ok">Current run</span>' : ""}
+        </div>
+        <div class="brand-caption">${escapeHtml(event.recordedAt || "")}</div>
+      </div>
+      <div class="audit-tags">
+        <span class="status-chip ${statusClass(String(event.responseStatus || ""))}">${escapeHtml(String(event.responseStatus || "-"))}</span>
+        ${event.provider ? `<span class="pill">${escapeHtml(providerCode(event.provider))}</span>` : ""}
+        ${event.serviceFamily ? `<span class="pill">${escapeHtml(event.serviceFamily)}</span>` : ""}
+        ${event.primaryEndpoint ? `<span class="pill">${escapeHtml(event.primaryEndpoint)}</span>` : ""}
+      </div>
+      <div class="audit-url">${escapeHtml(event.url || "")}</div>
+    </article>
+  `).join("");
+}
+
+function renderProvidersPage() {
+  providersCollectorCards.innerHTML = state.models.map((model) => `
+    <section class="provider-card">
+      <div class="provider-card-head">
+        <div>
+          <div class="eyebrow">${escapeHtml(providerCode(model.provider))}</div>
+          <h2>${escapeHtml(model.setup.selectedService || "Collector proof")}</h2>
+        </div>
+        <span class="pill ${model.setup.configured ? "pill-ok" : "pill-warn"}">${escapeHtml(model.setup.configured ? "Live" : "Collector only")}</span>
+      </div>
+      <p>${escapeHtml(model.setup.configured ? "Real provider call is configured and routed through the collector." : "Collector replay is available. Live provider credentials are not fully configured.")}</p>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">Collector</div>
+          <div class="detail-value">${escapeHtml(shortUrl(model.collectorUrl))}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Modeled families</div>
+          <div class="detail-value">${escapeHtml(String(model.allScenarios.length))}</div>
+        </div>
+      </div>
+    </section>
+  `).join("");
+
+  providersCoverageMatrix.innerHTML = state.models.map((model) => `
+    <section class="coverage-card">
+      <div class="section-head compact-head">
+        <div>
+          <div class="eyebrow">${escapeHtml(providerCode(model.provider))}</div>
+          <h3>Service family coverage</h3>
+        </div>
+      </div>
+      <div class="coverage-list">
+        ${(model.catalog.serviceFamilies || []).map((family) => `
+          <span class="coverage-pill ${family.selectedLiveCall ? "is-live" : family.status === "catalog-expanded" ? "is-expanded" : ""}">
+            ${escapeHtml(family.name)}
+          </span>
+        `).join("")}
+      </div>
+    </section>
+  `).join("");
+}
+
+function renderExplorer() {
+  explorerEndpointSelect.innerHTML = EXPLORER_ENDPOINTS.map((endpoint) => `
+    <option value="${endpoint.id}" ${endpoint.id === state.explorerEndpointId ? "selected" : ""}>${escapeHtml(endpoint.label)}</option>
+  `).join("");
+  const endpoint = EXPLORER_ENDPOINTS.find((item) => item.id === state.explorerEndpointId) || EXPLORER_ENDPOINTS[0];
+  explorerMethod.textContent = endpoint.method;
+  explorerRequestHelp.textContent = endpoint.description;
+  explorerResponsePanel.textContent = state.explorerResponse
+    ? JSON.stringify(state.explorerResponse, null, 2)
+    : "Select an endpoint and press Send.";
+}
+
+function renderDocsPage() {
+  docsWorkflow.innerHTML = `
+    <section class="docs-item">
+      <strong>Collector-first workflow</strong>
+      <ol class="docs-list">
+        ${(state.contract?.workflow || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+      </ol>
+    </section>
+    <section class="docs-item">
+      <strong>No-PII guidance</strong>
+      <ul class="docs-list">
+        ${(state.contract?.noPiiGuidance || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+      </ul>
+    </section>
+  `;
+
+  docsProviders.innerHTML = state.liveSetup.map((setup) => `
+    <section class="docs-item">
+      <strong>${escapeHtml(providerCode(setup.provider))}: ${escapeHtml(setup.selectedService || "Live proof")}</strong>
+      <ul class="docs-list">
+        ${(setup.steps || []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+      </ul>
+    </section>
+  `).join("");
+}
+
+function renderEnvironmentPage() {
+  const currentMode = state.overview?.mode || "hybrid-premium-console";
+  const workspace = state.overview?.cloudSightWorkspace || "workspace";
+  const collectors = state.models.map((model) => shortUrl(model.collectorUrl)).join(", ");
+  environmentOverview.innerHTML = `
+    <div class="detail-item">
+      <div class="detail-label">Application</div>
+      <div class="detail-value">${escapeHtml(state.overview?.application || "cloudsight-poc-hybrid")}</div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Mode</div>
+      <div class="detail-value">${escapeHtml(currentMode)}</div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Workspace</div>
+      <div class="detail-value">${escapeHtml(workspace)}</div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Collectors</div>
+      <div class="detail-value">${escapeHtml(collectors || "-")}</div>
+    </div>
+  `;
+
+  environmentSetupCards.innerHTML = state.liveSetup.map((setup) => `
+    <section class="docs-item">
+      <strong>${escapeHtml(providerCode(setup.provider))}</strong>
+      <div class="badge-row">
+        <span class="pill ${setup.configured ? "pill-ok" : "pill-warn"}">${escapeHtml(setup.configured ? "Configured" : "Missing credentials")}</span>
+        <span class="pill">${escapeHtml(setup.selectedService || "Live proof")}</span>
+      </div>
+      <ul class="docs-list">
+        ${(setup.requirements || []).map((item) => `<li>${escapeHtml(item.description)}: ${escapeHtml(item.configured ? "configured" : "missing")}</li>`).join("")}
+      </ul>
+    </section>
+  `).join("");
+}
+
+function renderOverviewPreviews() {
+  const previewRows = filteredCapturedRows().slice(0, 4);
+  overviewRowsPreview.innerHTML = previewRows.length
+    ? previewRows.map((row) => `
+      <div class="preview-row">
+        <strong>${escapeHtml(row.service)}</strong>
+        <p>${escapeHtml(providerCode(row.provider))} - ${escapeHtml(row.inputEndpoint)} - ${escapeHtml(formatMoney(row.cost))}</p>
+      </div>
+    `).join("")
+    : `<div class="preview-row"><p>Run a proof to show recent stored rows.</p></div>`;
+
+  overviewAuditPreview.innerHTML = state.audit.slice(0, 4).map((event) => `
+    <div class="preview-row">
+      <strong>${escapeHtml(auditStage(event))}</strong>
+      <p>${escapeHtml(auditMessage(event))}</p>
+    </div>
+  `).join("") || `<div class="preview-row"><p>Audit events will appear here after the first run.</p></div>`;
+}
+
+function renderRawJsonPage() {
+  resultPanel.textContent = state.lastRun
+    ? JSON.stringify(state.lastRun, null, 2)
+    : "Select a service on the left and run it.";
+}
+
+function renderAll() {
+  syncViewState();
+  renderHeroStats();
+  renderProviderTabs();
+  renderSelectedProviderCard();
+  renderScenarioList();
+  renderSelectedScenarioCard();
+  renderFlowExplanation(state.lastRun);
+  renderResultSummary(state.lastRun);
+  renderLatestRowCard();
+  renderLiveAuditTimeline();
+  renderCapturedRowsPage();
+  renderAuditPage();
+  renderProvidersPage();
+  renderExplorer();
+  renderDocsPage();
+  renderEnvironmentPage();
+  renderOverviewPopularTests();
+  renderOverviewPreviews();
+  renderRawJsonPage();
+}
+
+async function loadAudit() {
+  try {
+    state.audit = await json("/demo/audit", {}, 15000);
+  } catch (error) {
+    state.audit = [];
+  }
+  renderAuditPage();
+  renderLiveAuditTimeline();
+  renderOverviewPreviews();
+}
+
+async function loadCapturedRows() {
+  try {
+    const payload = await json("/demo/captured-rows", {}, 18000);
+    state.capturedRowsSource = payload.source || "LIVE";
+    state.capturedRowsMessage = payload.message || "";
+    state.capturedRows = Array.isArray(payload.rows)
+      ? payload.rows.map((row) => normalizeUsageRow(row))
+      : [];
+  } catch (error) {
+    state.capturedRowsSource = "UNAVAILABLE";
+    state.capturedRowsMessage = error.message;
+    state.capturedRows = currentRunRows();
+  }
+  renderCapturedRowsPage();
+  renderOverviewPreviews();
+}
+
+async function runExplorer() {
+  const endpoint = EXPLORER_ENDPOINTS.find((item) => item.id === state.explorerEndpointId) || EXPLORER_ENDPOINTS[0];
+  explorerResponsePanel.textContent = "Loading...";
+  try {
+    state.explorerResponse = await json(endpoint.url, {}, 20000);
+  } catch (error) {
+    state.explorerResponse = { status: "ERROR", message: error.message };
+  }
+  renderExplorer();
+}
+
+async function runSelectedScenarioFlow() {
   const scenario = getSelectedScenario();
   if (!scenario) {
     return;
   }
 
   state.loadingScenarioId = scenario.id;
-  state.activeResponseTab = "captured";
-  syncResponsePanes();
-  renderSelectedProvider();
-  renderSelectedScenario();
+  activateView("live-test");
+  renderSelectedScenarioCard();
+  renderScenarioList();
+  renderResultSummary(null);
+  renderLatestRowCard();
   setBanner(
     scenario.executionMode === "live-provider-call"
-      ? `Running a real ${scenario.provider} provider call and forwarding the collector payload…`
-      : `Running the ${scenario.provider} collector replay for ${scenario.serviceFamily}…`,
+      ? `Running a real ${providerCode(scenario.provider)} provider call and forwarding the collector payload...`
+      : `Running the ${providerCode(scenario.provider)} collector replay for ${scenario.serviceFamily}...`,
     "running"
   );
 
   try {
     const result = scenario.executionMode === "live-provider-call"
-      ? await json(`/demo/live/providers/${scenario.provider}/run?verify=true`, { method: "POST" })
-      : await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" });
+      ? await json(`/demo/live/providers/${scenario.provider}/run?verify=true`, { method: "POST" }, 120000)
+      : await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" }, 120000);
 
     state.lastRun = result;
-    renderFlowExplanation(scenario, result);
-    renderResultSummary(result, scenario);
-    renderResultNarrative(result, scenario);
-    renderUsageTable(result, scenario);
-    resultPanel.textContent = JSON.stringify(result, null, 2);
-    renderRunReadback(result, scenario);
-    await loadAudit();
     const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
-    state.activeResponseTab = dispatchStatus === "SUCCESS" ? "captured" : dispatchStatus === "RATE_LIMITED" ? "audit" : "raw";
-    syncResponsePanes();
     setBanner(
       dispatchStatus === "SUCCESS"
-        ? `${scenario.serviceFamily} finished successfully. CloudSight accepted the signal.`
+        ? `${scenario.serviceFamily} completed successfully.`
         : dispatchStatus === "RATE_LIMITED"
-          ? `${scenario.serviceFamily} ran, but CloudSight throttled the collector dispatch. Try again in a few seconds.`
+          ? `${scenario.serviceFamily} ran, but CloudSight throttled the collector dispatch.`
           : `${scenario.serviceFamily} completed with an error. Review the CloudSight output panel for details.`,
       dispatchStatus === "SUCCESS" ? "success" : dispatchStatus === "RATE_LIMITED" ? "warn" : "error"
     );
+
+    await Promise.all([loadAudit(), loadCapturedRows()]);
   } catch (error) {
-    renderResultNarrative({ status: "ERROR" }, scenario);
-    resultPanel.textContent = error.stack || String(error);
-    renderUsageTable(null, scenario);
-    state.activeResponseTab = "raw";
-    syncResponsePanes();
+    state.lastRun = {
+      status: "ERROR",
+      message: error.message
+    };
     setBanner(`The ${scenario.serviceFamily} run failed before CloudSight could confirm it.`, "error");
+    resultPanel.textContent = error.stack || String(error);
   } finally {
     state.loadingScenarioId = null;
-    renderSelectedProvider();
-    renderSelectedScenario();
+    renderAll();
   }
 }
 
-async function runRealtime() {
-  const button = document.getElementById("runRealtime");
+async function runDemoSet() {
   state.runningAll = true;
-  state.activeResponseTab = "captured";
-  syncResponsePanes();
-  button.disabled = true;
-  button.textContent = "Running demo set…";
+  runRealtime.disabled = true;
+  runRealtime.textContent = "Running demo set...";
+  activateView("overview");
   setBanner("Running the AWS, GCP, and Azure live collector proofs one by one.", "running");
+
   try {
     const providers = state.models
       .filter((model) => model.setup.configured && model.liveScenario)
       .map((model) => model.provider);
     const results = [];
+
     for (const provider of providers) {
-      setBanner(`Running ${provider} live proof through the collector…`, "running");
-      const result = await json(`/demo/live/providers/${provider}/run?verify=true`, { method: "POST" });
+      const result = await json(`/demo/live/providers/${provider}/run?verify=true`, { method: "POST" }, 120000);
       results.push({
         provider,
         liveCall: result.liveCall?.status || "UNKNOWN",
         dispatch: result.dispatch?.status || result.status || "UNKNOWN",
         stored: result.dispatch?.result?.response?.stored || 0,
-        verification: result.verification?.status || "UNKNOWN",
-        matched: (result.verification?.matchedLogs || []).length
+        verification: result.verification?.status || "UNKNOWN"
       });
       state.lastRun = result;
     }
+
     const success = results.every((item) => item.liveCall === "SUCCESS" && item.dispatch === "SUCCESS" && item.stored >= 1);
-    resultPanel.textContent = JSON.stringify({ mode: "demo-set", results }, null, 2);
-    resultSummary.innerHTML = `
-      <span class="pill ${success ? "pill-ok" : "pill-warn"}">${escapeHtml(success ? "SUCCESS" : "PARTIAL")}</span>
-      <span class="pill">${escapeHtml("AWS + GCP + AZURE")}</span>
-    `;
-    renderResultNarrative({
+    state.lastRun = {
+      status: success ? "SUCCESS" : "PARTIAL",
       dispatch: { status: success ? "SUCCESS" : "PARTIAL" },
       verification: { status: success ? "SUCCESS" : "WARN" },
-      liveCall: { status: success ? "SUCCESS" : "PARTIAL" }
-    }, getSelectedScenario() || { serviceFamily: "Live demo set", provider: "Multi-cloud" });
-    const scenario = getSelectedScenario();
-    if (scenario && state.lastRun) {
-      renderFlowExplanation(scenario, state.lastRun);
-      renderUsageTable(state.lastRun, scenario);
-      renderRunReadback(state.lastRun, scenario);
-    }
-    await loadAll();
-    state.activeResponseTab = success ? "captured" : "audit";
-    syncResponsePanes();
+      liveCall: { status: success ? "SUCCESS" : "PARTIAL" },
+      results
+    };
+
     setBanner(
       success
         ? "AWS, GCP, and Azure all stored rows in CloudSight successfully."
         : "The demo set finished, but one or more providers need another retry.",
       success ? "success" : "warn"
     );
+
+    await Promise.all([loadAudit(), loadCapturedRows()]);
   } catch (error) {
-    renderResultNarrative({ status: "ERROR" }, getSelectedScenario() || { serviceFamily: "Realtime collectors" });
-    resultPanel.textContent = error.stack || String(error);
-    state.activeResponseTab = "raw";
-    syncResponsePanes();
-    setBanner("Running the AWS/GCP/Azure demo set failed. Please retry.", "error");
+    state.lastRun = {
+      status: "ERROR",
+      message: error.message
+    };
+    setBanner("Running the AWS, GCP, and Azure demo set failed. Please retry.", "error");
   } finally {
     state.runningAll = false;
-    button.disabled = false;
-    button.textContent = "Run demo set";
-  }
-}
-
-function renderOverviewCards(overview) {
-  const dashboard = overview.cloudSight?.dashboardOverview || {};
-  const usage = overview.cloudSight?.usageSummary || {};
-  const connections = overview.cloudSight?.connections?.summary || {};
-  const authState = overview.cloudSight?.auth || "UNKNOWN";
-  const mode = overview.cloudSight?.readbackMode || "UNAVAILABLE";
-  const note = overview.cloudSight?.message || "";
-  readbackNote.innerHTML = `
-    <div class="readback-pill ${authState === "CONNECTED" ? "ok" : authState === "DEGRADED" ? "warn" : "neutral"}">
-      ${escapeHtml(authState === "CONNECTED" ? "Live product readback" : authState === "DEGRADED" ? "Cached product snapshot" : "Collector-first demo mode")}
-    </div>
-    <p>${escapeHtml(note || `Readback mode: ${mode}`)}</p>
-  `;
-  const cards = [
-    ["Demo mode", authState === "CONNECTED" ? "Live + workspace" : authState === "DEGRADED" ? "Collector + cached" : "Collector confirmed"],
-    ["Current spend", dashboard.currentSpend ?? "—"],
-    ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
-    ["Providers connected", connections.providersConnected ?? "—"]
-  ];
-  overviewGrid.innerHTML = cards.map(([label, value]) => `
-    <div class="meta-card">
-      <div class="label">${label}</div>
-      <div class="value">${escapeHtml(typeof value === "number" ? formatCount(value) : value)}</div>
-    </div>
-  `).join("");
-}
-
-function renderAudit(events) {
-  const recent = (events || []).slice(0, 36);
-  const runId = state.lastRun?.runId;
-  const matched = runId ? recent.filter((event) => event.runId === runId) : [];
-  const ordered = runId
-    ? [...matched, ...recent.filter((event) => event.runId !== runId)]
-    : recent;
-  auditMatchSummary.textContent = runId
-    ? `${matched.length} audit event${matched.length === 1 ? "" : "s"} from the current run are highlighted below.`
-    : "Recent calls will appear here. Matching events from the current run are highlighted.";
-  auditPanel.innerHTML = ordered.map((event) => {
-    const status = Number(event.responseStatus || 0);
-    const statusClass = status >= 400 ? "status-error" : status >= 300 ? "status-warn" : "status-ok";
-    const isMatch = runId && event.runId === runId;
-    return `
-      <div class="audit-item ${isMatch ? "audit-item-match" : ""}">
-        <div class="audit-top">
-          <div>
-            <span class="audit-method">${escapeHtml(event.method || "CALL")}</span>
-            <span class="pill ${statusTone(event.responseStatus >= 400 ? "ERROR" : event.responseStatus >= 300 ? "WARN" : "SUCCESS")}">${escapeHtml(auditStage(event))}</span>
-            ${isMatch ? '<span class="pill pill-ok">current run</span>' : ""}
-          </div>
-          <div class="muted">${escapeHtml(event.recordedAt || "")}</div>
-        </div>
-        <div class="audit-tags">
-          <span class="status-chip ${statusClass}">${status || "—"}</span>
-          ${event.provider ? `<span class="pill">${escapeHtml(event.provider)}</span>` : ""}
-          ${event.serviceFamily ? `<span class="pill">${escapeHtml(event.serviceFamily)}</span>` : ""}
-          ${event.primaryEndpoint ? `<span class="pill">${escapeHtml(event.primaryEndpoint)}</span>` : ""}
-        </div>
-        <div class="audit-url">${escapeHtml(event.url || "")}</div>
-      </div>
-    `;
-  }).join("");
-}
-
-async function loadAudit() {
-  const audit = await json("/demo/audit");
-  renderAudit(audit);
-}
-
-async function refreshWorkspaceSnapshot() {
-  try {
-    const overview = await json("/demo/overview");
-    renderHeroStats(overview);
-    renderOverviewCards(overview);
-  } catch (error) {
-    readbackNote.innerHTML = `
-      <div class="readback-pill neutral">Readback unavailable</div>
-      <p>CloudSight readback is temporarily unavailable, but the provider run result above is still valid.</p>
-    `;
+    runRealtime.disabled = false;
+    runRealtime.textContent = "Run demo set";
+    renderAll();
   }
 }
 
 async function loadAll() {
-  const [overview, scenarios, liveSetup, catalogs] = await Promise.all([
-    json("/demo/overview"),
-    json("/demo/scenarios"),
-    json("/demo/live/setup"),
-    json("/demo/catalogs")
-  ]);
+  try {
+    const [contract, scenarios, liveSetup, catalogs] = await Promise.all([
+      json("/demo/contract", {}, 15000),
+      json("/demo/scenarios", {}, 15000),
+      json("/demo/live/setup", {}, 15000),
+      json("/demo/catalogs", {}, 15000)
+    ]);
 
-  state.models = buildModels({ overview, scenarios, liveSetup, catalogs });
+    state.contract = contract;
+    state.scenarios = scenarios.filter((scenario) => DEMO_VISIBLE_PROVIDERS.includes(scenario.provider));
+    state.liveSetup = liveSetup.filter((item) => DEMO_VISIBLE_PROVIDERS.includes(item.provider));
+    state.catalogs = catalogs.filter((item) => DEMO_VISIBLE_PROVIDERS.includes(item.provider));
 
-  if ((!state.selectedProvider || !state.models.some((model) => model.provider === state.selectedProvider)) && state.models.length) {
-    state.selectedProvider = state.models[0].provider;
+    try {
+      state.overview = await json("/demo/overview", {}, 12000);
+    } catch (error) {
+      state.overview = {
+        application: "cloudsight-poc-hybrid",
+        mode: "hybrid-premium-console",
+        cloudSightWorkspace: "workspace readback deferred",
+        collectors: state.scenarios.reduce((accumulator, scenario) => {
+          if (!accumulator.some((collector) => collector.provider === scenario.provider)) {
+            accumulator.push({
+              provider: scenario.provider,
+              collectorUrl: scenario.collectorUrl
+            });
+          }
+          return accumulator;
+        }, [])
+      };
+    }
+
+    state.models = buildModels({
+      overview: state.overview,
+      scenarios: state.scenarios,
+      liveSetup: state.liveSetup,
+      catalogs: state.catalogs
+    });
+
+    if (!state.selectedProvider || !state.models.some((model) => model.provider === state.selectedProvider)) {
+      state.selectedProvider = state.models[0]?.provider || null;
+    }
+
+    const selectedModel = getSelectedModel();
+    if (selectedModel && !selectedModel.allScenarios.some((scenario) => scenario.id === state.selectedScenarioId)) {
+      state.selectedScenarioId = selectedModel.liveScenario?.id || selectedModel.allScenarios[0]?.id || null;
+    }
+
+    sidebarEnvironmentName.textContent = "POC";
+    sidebarRegion.textContent = regionSelect.value;
+
+    await Promise.all([loadAudit(), loadCapturedRows()]);
+    renderAll();
+  } catch (error) {
+    resultPanel.textContent = error.stack || String(error);
+    setBanner("The playground could not load the required demo data.", "error");
   }
-
-  const selectedModel = getSelectedModel();
-  const validScenarioIds = [selectedModel?.liveScenario, ...(selectedModel?.serviceScenarios || [])].filter(Boolean).map((item) => item.id);
-  if (!validScenarioIds.includes(state.selectedScenarioId)) {
-    state.selectedScenarioId = selectedModel?.liveScenario?.id || selectedModel?.serviceScenarios?.[0]?.id || null;
-  }
-
-  renderHeroStats(overview);
-  renderOverviewCards(overview);
-  syncResponsePanes();
-  renderProviderTabs();
-  renderSelectedProvider();
-  renderSelectedScenario();
-  renderResultNarrative(null, getSelectedScenario() || { serviceFamily: "proof" });
-  renderUsageTable(null, getSelectedScenario() || {});
-  await loadAudit();
 }
 
-loadAll().catch((error) => {
-  resultPanel.textContent = error.stack || String(error);
+loadAll().then(() => {
+  renderAll();
 });

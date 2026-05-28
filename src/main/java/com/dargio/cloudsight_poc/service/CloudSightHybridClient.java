@@ -151,6 +151,8 @@ public class CloudSightHybridClient {
     private volatile Instant cachedSessionExpiresAt;
     private volatile Map<String, Object> cachedCloudSightSnapshot;
     private volatile Instant cachedCloudSightSnapshotAt;
+    private volatile List<Map<String, Object>> cachedCapturedRows = List.of();
+    private volatile Instant cachedCapturedRowsAt;
 
     public CloudSightHybridClient(AuditTrailService auditTrailService) {
         this.auditTrailService = auditTrailService;
@@ -549,6 +551,53 @@ public class CloudSightHybridClient {
 
     public List<Map<String, Object>> audit() {
         return auditTrailService.events();
+    }
+
+    public Map<String, Object> capturedRows(int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 100));
+
+        try {
+            Session session = login();
+            Map<String, Object> payload = getJson(
+                    baseUrl + "/api/usage/logs?page=" + safePage + "&size=" + safeSize + "&sort=timestamp,desc",
+                    session.token()
+            );
+            List<Map<String, Object>> rows = extractUsageRows(payload);
+            cacheCapturedRows(rows);
+            return Map.of(
+                    "status", "SUCCESS",
+                    "source", "LIVE",
+                    "page", safePage,
+                    "size", safeSize,
+                    "count", rows.size(),
+                    "rows", rows,
+                    "lastReadAt", Instant.now().toString()
+            );
+        } catch (RestClientException error) {
+            if (!cachedCapturedRows.isEmpty()) {
+                return Map.of(
+                        "status", "SUCCESS",
+                        "source", "CACHED",
+                        "page", safePage,
+                        "size", safeSize,
+                        "count", cachedCapturedRows.size(),
+                        "rows", cachedCapturedRows,
+                        "lastReadAt", cachedCapturedRowsAt == null ? "" : cachedCapturedRowsAt.toString(),
+                        "message", "Showing the most recent successful CloudSight usage readback."
+                );
+            }
+            return Map.of(
+                    "status", "DEFERRED",
+                    "source", "UNAVAILABLE",
+                    "page", safePage,
+                    "size", safeSize,
+                    "count", 0,
+                    "rows", List.of(),
+                    "message", "CloudSight usage readback is temporarily unavailable.",
+                    "error", error.getMessage()
+            );
+        }
     }
 
     private Session login() {
@@ -984,6 +1033,26 @@ public class CloudSightHybridClient {
                     "error", error.getMessage()
             );
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> extractUsageRows(Map<String, Object> payload) {
+        if (payload == null) {
+            return List.of();
+        }
+        Object content = payload.get("content");
+        if (content instanceof List<?> list) {
+            return list.stream()
+                    .filter(Map.class::isInstance)
+                    .map(item -> (Map<String, Object>) item)
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private void cacheCapturedRows(List<Map<String, Object>> rows) {
+        cachedCapturedRows = List.copyOf(rows);
+        cachedCapturedRowsAt = Instant.now();
     }
 
     private List<Object> awsCollectorPayloads() {

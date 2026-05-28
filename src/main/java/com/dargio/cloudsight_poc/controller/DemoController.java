@@ -78,4 +78,12 @@ public class DemoController {
     public List<Map<String, Object>> audit() {
         return cloudSightHybridClient.audit();
     }
+
+    @GetMapping("/captured-rows")
+    public Map<String, Object> capturedRows(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        return cloudSightHybridClient.capturedRows(page, size);
+    }
 }
