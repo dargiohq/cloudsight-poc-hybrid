@@ -388,6 +388,7 @@ public class CloudSightHybridClient {
             Map<String, Object> verification = verify
                     ? verifyScenarioAfterDispatch(session == null ? null : session.token(), readbackApiKey, scenario, dispatch)
                     : verificationFromDispatch(scenario, dispatch, "Verification was skipped.");
+            cacheCapturedRowsForScenario(scenario, verification, dispatch);
 
             return Map.of(
                     "runId", runId,
@@ -437,6 +438,7 @@ public class CloudSightHybridClient {
                 Map<String, Object> verification = verify
                         ? verifyScenarioAfterDispatch(session == null ? null : session.token(), readbackApiKey, scenario, dispatch)
                         : verificationFromDispatch(scenario, dispatch, "Verification was skipped.");
+                cacheCapturedRowsForScenario(scenario, verification, dispatch);
 
                 return Map.of(
                         "runId", runId,
@@ -556,6 +558,20 @@ public class CloudSightHybridClient {
     public Map<String, Object> capturedRows(int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 100));
+
+        if (!cachedCapturedRows.isEmpty()) {
+            List<Map<String, Object>> rows = pageRows(cachedCapturedRows, safePage, safeSize);
+            return Map.of(
+                    "status", "SUCCESS",
+                    "source", "PREVIEW",
+                    "page", safePage,
+                    "size", safeSize,
+                    "count", rows.size(),
+                    "rows", rows,
+                    "lastReadAt", cachedCapturedRowsAt == null ? "" : cachedCapturedRowsAt.toString(),
+                    "message", "Showing the latest collector-confirmed rows from recent runs while CloudSight readback refreshes in the background."
+            );
+        }
 
         try {
             Session session = login();
@@ -1053,6 +1069,74 @@ public class CloudSightHybridClient {
     private void cacheCapturedRows(List<Map<String, Object>> rows) {
         cachedCapturedRows = List.copyOf(rows);
         cachedCapturedRowsAt = Instant.now();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void cacheCapturedRowsForScenario(DemoScenario scenario, Map<String, Object> verification, Map<String, Object> dispatch) {
+        List<Map<String, Object>> scenarioRows = new ArrayList<>();
+        if (verification != null) {
+            Object matchedLogs = verification.get("matchedLogs");
+            if (matchedLogs instanceof List<?> list) {
+                for (Object row : list) {
+                    if (row instanceof Map<?, ?> map) {
+                        scenarioRows.add(normalizeCachedRow((Map<String, Object>) map, scenario));
+                    }
+                }
+            }
+        }
+        if (scenarioRows.isEmpty()) {
+            scenarioRows.addAll(dispatchRows(dispatch, scenario));
+        }
+        if (scenarioRows.isEmpty()) {
+            return;
+        }
+
+        List<Map<String, Object>> merged = new ArrayList<>(scenarioRows);
+        for (Map<String, Object> existing : cachedCapturedRows) {
+            if (merged.stream().noneMatch(candidate -> rowKey(candidate).equals(rowKey(existing)))) {
+                merged.add(existing);
+            }
+            if (merged.size() >= 100) {
+                break;
+            }
+        }
+        cacheCapturedRows(merged);
+    }
+
+    private Map<String, Object> normalizeCachedRow(Map<String, Object> source, DemoScenario scenario) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        normalized.put("timestamp", source.getOrDefault("timestamp", Instant.now().toString()));
+        normalized.put("service", source.getOrDefault("service", scenario.serviceFamily()));
+        normalized.put("inputEndpoint", source.getOrDefault("inputEndpoint", scenario.primaryEndpoint()));
+        normalized.put("outputEndpoint", source.getOrDefault("outputEndpoint", scenario.secondaryEndpoint()));
+        normalized.put("inputUnits", source.getOrDefault("inputUnits", 0));
+        normalized.put("outputUnits", source.getOrDefault("outputUnits", 0));
+        normalized.put("calculatedCost", source.getOrDefault("calculatedCost", "—"));
+        normalized.put("collectorName", source.get("collectorName"));
+        normalized.put("sourceType", source.get("sourceType"));
+        normalized.put("sourceReference", source.get("sourceReference"));
+        normalized.put("regionCode", source.get("regionCode"));
+        normalized.put("deploymentEnvironment", source.get("deploymentEnvironment"));
+        normalized.put("ingestionMode", source.getOrDefault("ingestionMode", "COLLECTOR"));
+        return normalized;
+    }
+
+    private String rowKey(Map<String, Object> row) {
+        return String.join("|",
+                String.valueOf(row.getOrDefault("timestamp", "")),
+                String.valueOf(row.getOrDefault("service", "")),
+                String.valueOf(row.getOrDefault("inputEndpoint", "")),
+                String.valueOf(row.getOrDefault("sourceReference", ""))
+        );
+    }
+
+    private List<Map<String, Object>> pageRows(List<Map<String, Object>> rows, int page, int size) {
+        int fromIndex = Math.min(page * size, rows.size());
+        int toIndex = Math.min(fromIndex + size, rows.size());
+        if (fromIndex >= toIndex) {
+            return List.of();
+        }
+        return List.copyOf(rows.subList(fromIndex, toIndex));
     }
 
     private List<Object> awsCollectorPayloads() {

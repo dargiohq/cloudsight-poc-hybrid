@@ -1088,11 +1088,21 @@ async function loadAudit() {
 async function loadCapturedRows() {
   try {
     const payload = await json("/demo/captured-rows", {}, 18000);
-    state.capturedRowsSource = payload.source || "LIVE";
-    state.capturedRowsMessage = payload.message || "";
-    state.capturedRows = Array.isArray(payload.rows)
+    const apiRows = Array.isArray(payload.rows)
       ? payload.rows.map((row) => normalizeUsageRow(row))
       : [];
+    const fallbackRows = currentRunRows();
+
+    state.capturedRowsSource = payload.source || "LIVE";
+    state.capturedRowsMessage = payload.message || "";
+    state.capturedRows = apiRows.length
+      ? apiRows
+      : fallbackRows;
+
+    if (!apiRows.length && fallbackRows.length) {
+      state.capturedRowsSource = payload.source === "LIVE" ? "LIVE" : "PREVIEW";
+      state.capturedRowsMessage = payload.message || "Showing the latest collector-confirmed rows from the current run while CloudSight readback catches up.";
+    }
   } catch (error) {
     state.capturedRowsSource = "UNAVAILABLE";
     state.capturedRowsMessage = error.message;
