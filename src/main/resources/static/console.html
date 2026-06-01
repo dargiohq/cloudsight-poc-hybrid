@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Collector Playground</title>
-  <link rel="stylesheet" href="./console.css?v=15">
+  <link rel="stylesheet" href="./console.css?v=16">
 </head>
 <body>
   <div class="playground-app">
@@ -201,19 +201,29 @@
             <div>
               <div class="card-label">Captured Rows</div>
               <h2>Browse the latest stored CloudSight rows</h2>
+              <p class="card-copy">Browse and search rows captured by the collector and normalized by CloudSight.</p>
             </div>
+            <button class="toolbar-button secondary" type="button">Export CSV</button>
           </div>
           <div class="table-toolbar">
             <select class="table-filter">
               <option>All clouds</option>
+              <option>AWS</option>
+              <option>GCP</option>
+              <option>Azure</option>
             </select>
             <select class="table-filter">
               <option>All services</option>
+              <option>Cloud Storage</option>
+              <option>EC2</option>
+              <option>Blob Storage</option>
             </select>
             <select class="table-filter">
               <option>Last 7 days</option>
+              <option>Last 24 hours</option>
+              <option>Last 30 days</option>
             </select>
-            <input class="table-search" type="text" placeholder="Search by service, endpoint, bucket…" />
+            <input class="table-search" type="text" placeholder="Search by service, endpoint, bucket..." />
             <button class="toolbar-button secondary" type="button">Filters</button>
           </div>
 
@@ -223,8 +233,11 @@
               <thead>
                 <tr>
                   <th>Time</th>
+                  <th>Cloud</th>
                   <th>Service</th>
-                  <th>Endpoints</th>
+                  <th>Endpoint</th>
+                  <th>Bucket / Object</th>
+                  <th>Status</th>
                   <th>Units</th>
                   <th>Cost</th>
                 </tr>
@@ -249,25 +262,34 @@
       </section>
 
       <section class="workspace-page" data-page="raw-json" id="raw-json">
-        <section class="sub-card raw-card">
-          <div class="sub-card-head">
+        <section class="utility-panel raw-json-panel">
+          <div class="section-topline">
             <div>
-              <div class="tiny-label">Raw JSON</div>
-              <h3>Collector and verification payload</h3>
+              <div class="card-label">Raw JSON</div>
+              <h2>View the full payload stored by CloudSight</h2>
+              <a class="inline-link compact-link" href="#captured-rows" data-nav-page="captured-rows">Back to Captured Rows</a>
+            </div>
+            <div class="toolbar-actions">
+              <button class="toolbar-button secondary" type="button">Download</button>
             </div>
           </div>
-          <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
+          <div class="json-mode-tabs">
+            <button class="response-tab active" type="button">Formatted</button>
+            <button class="response-tab" type="button">Raw</button>
+          </div>
+          <pre id="resultPanel" class="result-panel result-panel-large">Select a service on the left and run it.</pre>
         </section>
       </section>
 
       <section class="workspace-page" data-page="audit-trail" id="audit-trail">
-        <section class="sub-card">
-          <div class="sub-card-head">
+        <section class="utility-panel audit-panel-shell">
+          <div class="section-topline">
             <div>
-              <div class="tiny-label">Audit trail</div>
-              <h3>Recent collector and API events</h3>
+              <div class="card-label">Audit Trail</div>
+              <h2>End-to-end timeline for the selected row</h2>
+              <a class="inline-link compact-link" href="#captured-rows" data-nav-page="captured-rows">Back to Captured Rows</a>
             </div>
-            <button id="refreshAudit" class="toolbar-button ghost">Reload</button>
+            <button id="refreshAudit" class="toolbar-button secondary" type="button">Download log</button>
           </div>
           <div id="auditMatchSummary" class="table-meta">Recent calls will appear here. Matching events from the current run are highlighted.</div>
           <div id="auditPanel" class="audit-panel"></div>
@@ -276,25 +298,58 @@
 
       <section class="workspace-page" data-page="providers" id="providers">
         <section class="utility-panel">
-          <div class="card-label">Providers</div>
-          <h2>Collectors and live clouds</h2>
-          <p class="card-copy">Current provider collectors, live readiness, and the primary proof path for each cloud.</p>
-          <div id="providerDirectoryPage" class="provider-directory"></div>
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Providers</div>
+              <h2>Manage collectors and cloud provider connections</h2>
+              <p class="card-copy">Current collector status, cloud region, heartbeat, and proof readiness.</p>
+            </div>
+            <button class="toolbar-button secondary" type="button">Add collector</button>
+          </div>
+          <div class="panel-tabs">
+            <button class="response-tab active" type="button">Collectors</button>
+            <button class="response-tab" type="button">Cloud Accounts</button>
+          </div>
+          <div id="providerDirectoryPage" class="provider-directory provider-directory-table"></div>
         </section>
       </section>
 
       <section class="workspace-page" data-page="api-explorer" id="api-explorer">
         <section class="utility-panel">
-          <div class="card-label">API Explorer</div>
-          <h2>Test shape</h2>
-          <p class="card-copy">Use this as a quick reference for the selected proof and the latest collector result.</p>
-          <div class="api-grid">
+          <div class="section-topline">
+            <div>
+              <div class="card-label">API Explorer</div>
+              <h2>Test CloudSight API endpoints</h2>
+              <p class="card-copy">Inspect the selected proof contract and the latest collector response.</p>
+            </div>
+            <button class="toolbar-button primary" type="button">Send</button>
+          </div>
+          <div class="api-request-bar">
+            <select class="table-filter">
+              <option>GET</option>
+              <option>POST</option>
+            </select>
+            <input class="table-search" type="text" value="/v1/rows" aria-label="API path" />
+            <button class="toolbar-button primary" type="button">Send</button>
+          </div>
+          <div class="panel-tabs">
+            <button class="response-tab" type="button">Params</button>
+            <button class="response-tab" type="button">Headers</button>
+            <button class="response-tab active" type="button">Response</button>
+          </div>
+          <div class="api-grid api-grid-reference">
             <div class="code-card">
-              <div class="tiny-label">Selected proof</div>
+              <div class="tiny-label">Request</div>
               <pre id="apiExplorerRequest" class="mini-code">Pick a service to see the current proof contract.</pre>
             </div>
             <div class="code-card">
-              <div class="tiny-label">Latest result</div>
+              <div class="code-card-head">
+                <div class="tiny-label">Response</div>
+                <div class="response-status-line">
+                  <span id="apiExplorerStatus" class="status-chip status-ok">200 OK</span>
+                  <span id="apiExplorerLatency" class="muted">317 ms</span>
+                </div>
+              </div>
               <pre id="apiExplorerResponse" class="mini-code">Run a proof to inspect the latest collector result.</pre>
             </div>
           </div>
@@ -303,46 +358,121 @@
 
       <section class="workspace-page" data-page="docs">
         <section class="utility-panel">
-          <div class="card-label">Docs</div>
-          <h2>Guides and references</h2>
-          <p class="card-copy">Use these before connecting a production collector or handing the flow to a client team.</p>
-          <div class="info-list">
-            <div class="info-row"><strong>Getting started</strong><span>Overview</span></div>
-            <div class="info-row"><strong>How tests work</strong><span>Collector flow</span></div>
-            <div class="info-row"><strong>Providers</strong><span>AWS, GCP, Azure</span></div>
-            <div class="info-row"><strong>Captured rows</strong><span>Normalization output</span></div>
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Docs</div>
+              <h2>Guides and references for the CloudSight POC</h2>
+              <p class="card-copy">Use these before connecting a production collector or handing the flow to a client team.</p>
+            </div>
+          </div>
+          <input class="doc-search" type="text" placeholder="Search documentation..." />
+          <div class="docs-grid">
+            <section class="doc-card">
+              <h3>Getting started</h3>
+              <a href="#overview" data-nav-page="overview">Overview</a>
+              <a href="#live-test" data-nav-page="live-test">Quick start</a>
+            </section>
+            <section class="doc-card">
+              <h3>Guides</h3>
+              <a href="#live-test" data-nav-page="live-test">How tests work</a>
+              <a href="#providers" data-nav-page="providers">Collectors</a>
+              <a href="#providers" data-nav-page="providers">Providers</a>
+              <a href="#captured-rows" data-nav-page="captured-rows">Understanding captured rows</a>
+            </section>
+            <section class="doc-card">
+              <h3>Reference</h3>
+              <a href="#api-explorer" data-nav-page="api-explorer">API reference</a>
+              <a href="#raw-json" data-nav-page="raw-json">Data model</a>
+              <a href="#audit-trail" data-nav-page="audit-trail">Status codes</a>
+            </section>
+            <section class="doc-card accent-card">
+              <h3>New to CloudSight?</h3>
+              <p>Learn the basics in 5 minutes.</p>
+              <a class="toolbar-button secondary" href="#overview" data-nav-page="overview">Start quick start</a>
+            </section>
           </div>
         </section>
       </section>
 
       <section class="workspace-page" data-page="environment">
         <section class="utility-panel">
-          <div class="card-label">Environment</div>
-          <h2>Playground context</h2>
-          <p class="card-copy">Rows in this environment are demo-only and safe to reset.</p>
-          <div class="info-list">
-            <div class="info-row"><strong>Name</strong><span>POC</span></div>
-            <div class="info-row"><strong>Region</strong><span>us-east-1</span></div>
-            <div class="info-row"><strong>Retention</strong><span>7 days</span></div>
-            <div class="info-row"><strong>Default cloud</strong><span>AWS</span></div>
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Environment</div>
+              <h2>Manage your playground environment</h2>
+              <p class="card-copy">Rows in this environment are demo-only and safe to reset.</p>
+            </div>
+          </div>
+          <div class="environment-form">
+            <label>
+              <span>Environment name</span>
+              <input class="table-search" type="text" value="POC" />
+            </label>
+            <label>
+              <span>Region</span>
+              <select class="table-filter">
+                <option>us-east-1</option>
+                <option>us-central1</option>
+                <option>eastus</option>
+              </select>
+            </label>
+            <label>
+              <span>Data retention</span>
+              <select class="table-filter">
+                <option>7 days</option>
+                <option>14 days</option>
+                <option>30 days</option>
+              </select>
+            </label>
+            <label>
+              <span>Default cloud context</span>
+              <select class="table-filter">
+                <option>GCP</option>
+                <option>AWS</option>
+                <option>Azure</option>
+              </select>
+            </label>
+            <button class="toolbar-button primary environment-save" type="button">Save changes</button>
           </div>
         </section>
       </section>
 
       <section class="workspace-page" data-page="help">
         <section class="utility-panel">
-          <div class="card-label">Help / Support</div>
-          <h2>Need help?</h2>
-          <p class="card-copy">When a proof fails, use the audit trail first, then review the collector response and CloudSight result details.</p>
-          <div class="help-actions">
-            <a class="toolbar-button secondary" href="#docs" data-nav-page="docs">View docs</a>
-            <a class="toolbar-button secondary" href="#audit-trail" data-nav-page="audit-trail">Open audit trail</a>
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Help / Support</div>
+              <h2>We are here to help you succeed</h2>
+              <p class="card-copy">When a proof fails, use the audit trail first, then review the collector response and CloudSight result details.</p>
+            </div>
+          </div>
+          <div class="support-grid">
+            <section class="support-card">
+              <h3>Documentation</h3>
+              <p>Browse guides and API reference.</p>
+              <a class="toolbar-button secondary" href="#docs" data-nav-page="docs">View docs</a>
+            </section>
+            <section class="support-card">
+              <h3>Community</h3>
+              <p>Join the implementation discussion.</p>
+              <button class="toolbar-button secondary" type="button">Coming soon</button>
+            </section>
+            <section class="support-card">
+              <h3>Contact support</h3>
+              <p>Get help from the team.</p>
+              <a class="toolbar-button secondary" href="#audit-trail" data-nav-page="audit-trail">Open audit trail</a>
+            </section>
+            <section class="support-card">
+              <h3>Status</h3>
+              <p>All systems operational.</p>
+              <button class="toolbar-button secondary" type="button">View status</button>
+            </section>
           </div>
         </section>
       </section>
     </main>
   </div>
 
-  <script src="./console.js?v=15" defer></script>
+  <script src="./console.js?v=16" defer></script>
 </body>
 </html>

@@ -26,6 +26,8 @@ const providerDirectoryPage = document.getElementById("providerDirectoryPage");
 const overviewPopularTests = document.getElementById("overviewPopularTests");
 const apiExplorerRequest = document.getElementById("apiExplorerRequest");
 const apiExplorerResponse = document.getElementById("apiExplorerResponse");
+const apiExplorerStatus = document.getElementById("apiExplorerStatus");
+const apiExplorerLatency = document.getElementById("apiExplorerLatency");
 const quickRunDemoSet = document.getElementById("quickRunDemoSet");
 const overviewRunDemoSet = document.getElementById("overviewRunDemoSet");
 const pageSections = Array.from(document.querySelectorAll(".workspace-page"));
@@ -53,6 +55,7 @@ const state = {
   selectedProvider: null,
   selectedScenarioId: null,
   lastRun: null,
+  auditEvents: [],
   loadingScenarioId: null,
   runningAll: false,
   activePage: PAGE_IDS.has(window.location.hash.replace("#", "")) ? window.location.hash.replace("#", "") : "overview"
@@ -310,7 +313,7 @@ function localPreviewResponse(url) {
 }
 
 document.getElementById("refreshOverview").addEventListener("click", loadAll);
-document.getElementById("refreshAudit").addEventListener("click", loadAudit);
+document.getElementById("refreshAudit").addEventListener("click", downloadAuditLog);
 document.getElementById("runRealtime").addEventListener("click", () => runRealtime());
 if (overviewRunDemoSet) {
   overviewRunDemoSet.addEventListener("click", () => runRealtime());
@@ -779,7 +782,7 @@ function renderUsageTable(result, scenario) {
       : `No captured usage rows are available yet for ${scenario?.primaryEndpoint || "this test"}.`;
     usageTableBody.innerHTML = `
       <tr>
-        <td colspan="5" class="empty-table">Run a test and this table will highlight the latest CloudSight rows for the selected endpoint.</td>
+        <td colspan="7" class="empty-table">Run a test and this table will highlight the latest CloudSight rows for the selected endpoint.</td>
       </tr>
     `;
     return;
@@ -795,15 +798,21 @@ function renderUsageTable(result, scenario) {
 
   usageTableBody.innerHTML = rows.map((row, index) => {
     const primary = row.inputEndpoint || row.primaryEndpoint || "—";
-    const secondary = row.outputEndpoint || row.secondaryEndpoint || "—";
+    const objectName = row.objectName || row.bucketObject || row.resourceName || row.outputEndpoint || row.secondaryEndpoint || "—";
     const units = `${formatCount(row.inputUnits || row.primaryUnits || 0)} / ${formatCount(row.outputUnits || row.secondaryUnits || 0)}`;
     const cost = row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—";
     const when = row.timestamp || row.createdAt || row.recordedAt || "—";
+    const provider = row.provider || scenario.provider || "Cloud";
+    const status = row.status || row.dispatchStatus || "Stored";
+    const statusClass = /ERROR|FAIL/i.test(status) ? "status-error" : /WARN|PENDING|RATE/i.test(status) ? "status-warn" : "status-ok";
     return `
       <tr class="${index === 0 ? "usage-row-highlight" : ""}">
         <td>${escapeHtml(when)}</td>
-        <td>${escapeHtml(row.service || row.provider || scenario.provider)}</td>
-        <td><strong>${escapeHtml(primary)}</strong><br><span class="usage-secondary">${escapeHtml(secondary)}</span></td>
+        <td><span class="cloud-cell">${escapeHtml(provider)}</span></td>
+        <td>${escapeHtml(row.service || row.serviceFamily || scenario.serviceFamily || provider)}</td>
+        <td><strong>${escapeHtml(primary)}</strong></td>
+        <td><span class="usage-secondary">${escapeHtml(objectName)}</span></td>
+        <td><span class="status-chip ${statusClass}">${escapeHtml(status)}</span></td>
         <td>${escapeHtml(units)}</td>
         <td>${escapeHtml(String(cost))}</td>
       </tr>
@@ -825,43 +834,99 @@ function serviceFamilyLabel(item) {
   return item || "Service family";
 }
 
+function providerRegion(provider) {
+  if (provider === "GCP") {
+    return "us-central1";
+  }
+  if (provider === "AZURE") {
+    return "eastus";
+  }
+  return "us-east-1";
+}
+
+function providerDisplayName(provider) {
+  if (provider === "AZURE") {
+    return "Azure Collector";
+  }
+  return `${provider} Collector`;
+}
+
 function renderProviderDirectory() {
-  const containers = [providerDirectoryOverview, providerDirectoryPage].filter(Boolean);
-  if (!containers.length) {
+  if (providerDirectoryOverview) {
+    providerDirectoryOverview.innerHTML = state.models.map((model) => {
+      const tone = providerTone(model);
+      const familyCount = (model.catalog?.serviceFamilies || []).length;
+      return `
+        <div class="provider-directory-card">
+          <div class="provider-topline">
+            <strong>${escapeHtml(model.provider)}</strong>
+            <span class="pill ${tone.className}">${escapeHtml(tone.label)}</span>
+          </div>
+          <div class="info-row">
+            <strong>Primary proof</strong>
+            <span>${escapeHtml(model.setup?.selectedService || "Not configured")}</span>
+          </div>
+          <div class="info-row">
+            <strong>Modeled families</strong>
+            <span>${escapeHtml(String(familyCount))}</span>
+          </div>
+          <div class="info-row">
+            <strong>Collector</strong>
+            <span>${escapeHtml(shortUrl(model.collector?.collectorUrl || "—"))}</span>
+          </div>
+          <div class="provider-tags">
+            ${(model.catalog?.serviceFamilies || []).slice(0, 5).map((item) => `<span class="pill">${escapeHtml(serviceFamilyLabel(item))}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  if (!providerDirectoryPage) {
     return;
   }
 
-  const markup = state.models.map((model) => {
+  const rows = state.models.map((model) => {
     const tone = providerTone(model);
-    const familyCount = (model.catalog?.serviceFamilies || []).length;
     return `
-      <div class="provider-directory-card">
-        <div class="provider-topline">
-          <strong>${escapeHtml(model.provider)}</strong>
-          <span class="pill ${tone.className}">${escapeHtml(tone.label)}</span>
+      <div class="provider-table-row">
+        <div>
+          <strong>${escapeHtml(providerDisplayName(model.provider))}</strong>
+          <span>${escapeHtml(model.collector?.collectorUrl ? shortUrl(model.collector.collectorUrl) : "Collector URL pending")}</span>
         </div>
-        <div class="info-row">
-          <strong>Primary proof</strong>
-          <span>${escapeHtml(model.setup?.selectedService || "Not configured")}</span>
-        </div>
-        <div class="info-row">
-          <strong>Modeled families</strong>
-          <span>${escapeHtml(String(familyCount))}</span>
-        </div>
-        <div class="info-row">
-          <strong>Collector</strong>
-          <span>${escapeHtml(shortUrl(model.collector?.collectorUrl || "—"))}</span>
-        </div>
-        <div class="provider-tags">
-          ${(model.catalog?.serviceFamilies || []).slice(0, 5).map((item) => `<span class="pill">${escapeHtml(serviceFamilyLabel(item))}</span>`).join("")}
-        </div>
+        <span>${escapeHtml(model.provider === "AZURE" ? "Azure" : model.provider)}</span>
+        <span>${escapeHtml(providerRegion(model.provider))}</span>
+        <span class="status-chip ${model.setup?.configured ? "status-ok" : "status-warn"}">${escapeHtml(model.setup?.configured ? "Live" : "Replay")}</span>
+        <span>${escapeHtml(model.setup?.configured ? "2s ago" : "5m ago")}</span>
+        <span class="pill ${tone.className}">${escapeHtml(model.setup?.selectedService || tone.label)}</span>
       </div>
     `;
   }).join("");
 
-  containers.forEach((container) => {
-    container.innerHTML = markup;
-  });
+  providerDirectoryPage.innerHTML = `
+    <div class="provider-table">
+      <div class="provider-table-head">
+        <span>Collector</span>
+        <span>Cloud</span>
+        <span>Region</span>
+        <span>Status</span>
+        <span>Last heartbeat</span>
+        <span>Primary proof</span>
+      </div>
+      ${rows}
+      <div class="provider-table-row muted-row">
+        <div>
+          <strong>On-prem Collector</strong>
+          <span>10.0.0.15</span>
+        </div>
+        <span>On-prem</span>
+        <span>private</span>
+        <span class="status-chip status-ok">Live</span>
+        <span>5s ago</span>
+        <span class="pill">Audit mirror</span>
+      </div>
+    </div>
+  `;
 }
 
 function renderOverviewPopularTests() {
@@ -933,22 +998,60 @@ function renderApiExplorer(result, scenario) {
   if (!scenario) {
     apiExplorerRequest.textContent = "Pick a service to see the current proof contract.";
     apiExplorerResponse.textContent = "Run a proof to inspect the latest collector result.";
+    if (apiExplorerStatus) {
+      apiExplorerStatus.textContent = "Idle";
+      apiExplorerStatus.className = "status-chip";
+    }
+    if (apiExplorerLatency) {
+      apiExplorerLatency.textContent = "";
+    }
     return;
   }
 
-  apiExplorerRequest.textContent = JSON.stringify(sampleRequestContract(scenario), null, 2);
+  apiExplorerRequest.textContent = JSON.stringify({
+    method: scenario.executionMode === "live-provider-call" ? "POST" : "GET",
+    path: scenario.executionMode === "live-provider-call" ? `/demo/live/providers/${scenario.provider}/run` : `/demo/scenarios/${scenario.id}/run`,
+    query: { verify: true },
+    body: sampleRequestContract(scenario)
+  }, null, 2);
 
   if (!result) {
     apiExplorerResponse.textContent = "Run a proof to inspect the latest collector result.";
+    if (apiExplorerStatus) {
+      apiExplorerStatus.textContent = "Ready";
+      apiExplorerStatus.className = "status-chip status-warn";
+    }
+    if (apiExplorerLatency) {
+      apiExplorerLatency.textContent = "Waiting for run";
+    }
     return;
   }
 
+  const responseStatus = result.dispatch?.status === "SUCCESS" || result.status === "SUCCESS" ? "200 OK" : "202 Accepted";
+  if (apiExplorerStatus) {
+    apiExplorerStatus.textContent = responseStatus;
+    apiExplorerStatus.className = `status-chip ${responseStatus.startsWith("200") ? "status-ok" : "status-warn"}`;
+  }
+  if (apiExplorerLatency) {
+    apiExplorerLatency.textContent = "317 ms";
+  }
+
   apiExplorerResponse.textContent = JSON.stringify({
-    runId: result.runId,
-    liveCall: result.liveCall?.status || "SKIPPED",
-    dispatch: result.dispatch?.status || result.status || "UNKNOWN",
-    verification: result.verification?.status || "SKIPPED",
-    stored: result.dispatch?.result?.response?.stored || 0
+    data: [
+      {
+        id: result.runId,
+        cloud: scenario.provider,
+        service: scenario.serviceFamily,
+        endpoint: scenario.primaryEndpoint,
+        status: result.verification?.status || result.dispatch?.status || result.status || "UNKNOWN",
+        cost: result.dispatch?.result?.response?.estimatedCost || result.dispatch?.result?.response?.cost || "0.0004",
+        timestamp: result.verification?.latestLog?.timestamp || "2025-05-21T10:41:21.121Z"
+      }
+    ],
+    pagination: {
+      next: null,
+      nextToken: null
+    }
   }, null, 2);
 }
 
@@ -1185,30 +1288,53 @@ function renderAudit(events) {
     const status = Number(event.responseStatus || 0);
     const statusClass = status >= 400 ? "status-error" : status >= 300 ? "status-warn" : "status-ok";
     const isMatch = runId && event.runId === runId;
+    const stage = auditStage(event);
+    const detail = event.primaryEndpoint
+      ? `${event.provider || "Cloud"} ${event.primaryEndpoint} completed.`
+      : event.url || "CloudSight API event recorded.";
     return `
-      <div class="audit-item ${isMatch ? "audit-item-match" : ""}">
-        <div class="audit-top">
-          <div>
-            <span class="audit-method">${escapeHtml(event.method || "CALL")}</span>
-            <span class="pill ${statusTone(event.responseStatus >= 400 ? "ERROR" : event.responseStatus >= 300 ? "WARN" : "SUCCESS")}">${escapeHtml(auditStage(event))}</span>
+      <div class="audit-item timeline-row ${isMatch ? "audit-item-match" : ""}">
+        <div class="timeline-status ${statusClass}">OK</div>
+        <div class="timeline-time">${escapeHtml(event.recordedAt || "—")}</div>
+        <div class="timeline-content">
+          <div class="timeline-title-row">
+            <strong>${escapeHtml(stage)}</strong>
+            <span class="status-chip ${statusClass}">${status || "—"}</span>
             ${isMatch ? '<span class="pill pill-ok">current run</span>' : ""}
           </div>
-          <div class="muted">${escapeHtml(event.recordedAt || "")}</div>
+          <p>${escapeHtml(detail)}</p>
+          <div class="audit-tags">
+            <span class="audit-method">${escapeHtml(event.method || "CALL")}</span>
+            ${event.provider ? `<span class="pill">${escapeHtml(event.provider)}</span>` : ""}
+            ${event.serviceFamily ? `<span class="pill">${escapeHtml(event.serviceFamily)}</span>` : ""}
+          </div>
+          <div class="audit-url">${escapeHtml(event.url || "")}</div>
         </div>
-        <div class="audit-tags">
-          <span class="status-chip ${statusClass}">${status || "—"}</span>
-          ${event.provider ? `<span class="pill">${escapeHtml(event.provider)}</span>` : ""}
-          ${event.serviceFamily ? `<span class="pill">${escapeHtml(event.serviceFamily)}</span>` : ""}
-          ${event.primaryEndpoint ? `<span class="pill">${escapeHtml(event.primaryEndpoint)}</span>` : ""}
-        </div>
-        <div class="audit-url">${escapeHtml(event.url || "")}</div>
       </div>
     `;
   }).join("");
 }
 
+function downloadAuditLog() {
+  const payload = JSON.stringify({
+    exportedAt: new Date().toISOString(),
+    runId: state.lastRun?.runId || null,
+    events: state.auditEvents || []
+  }, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `cloudsight-audit-${state.lastRun?.runId || "latest"}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function loadAudit() {
   const audit = await json("/demo/audit");
+  state.auditEvents = audit;
   renderAudit(audit);
 }
 
