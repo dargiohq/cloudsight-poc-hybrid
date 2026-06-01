@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudSight Hybrid POC Console Local</title>
+  <style>
+:root {
+  color-scheme: dark;
+  --bg: #07111f;
+  --panel: rgba(14, 24, 42, 0.94);
+  --panel-soft: rgba(255, 255, 255, 0.035);
+  --panel-strong: rgba(6, 15, 28, 0.88);
+  --border: rgba(147, 197, 253, 0.14);
+  --text: #edf5ff;
+  --muted: #90a9c8;
+  --blue: #67a3ff;
+  --cyan: #7de2ff;
+  --mint: #89f5d1;
+  --amber: #ffcc7a;
+  --danger: #ff8f8f;
+  --shadow: 0 24px 90px rgba(4, 10, 20, 0.42);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(77, 120, 255, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(76, 228, 211, 0.16), transparent 26%),
+    linear-gradient(180deg, #08111e 0%, #050b15 100%);
+  color: var(--text);
+}
+
+.shell {
+  width: min(1500px, calc(100vw - 40px));
+  margin: 0 auto;
+  padding: 24px 0 40px;
+}
+
+.topbar,
+.runner-panel,
+.inspector-panel,
+.inspector-card {
+  background: linear-gradient(180deg, rgba(16, 28, 49, 0.94), rgba(9, 18, 32, 0.92));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.topbar {
+  display: grid;
+  grid-template-columns: 1.6fr auto;
+  gap: 24px;
+  align-items: end;
+  border-radius: 28px;
+  padding: 28px 32px;
+}
+
+.eyebrow,
+.panel-label {
+  font-size: 12px;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--cyan);
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  letter-spacing: -0.04em;
+}
+
+h1 {
+  font-size: clamp(2.1rem, 3.4vw, 3.5rem);
+  line-height: 1;
+}
+
+h2 {
+  font-size: 1.5rem;
+}
+
+h3 {
+  font-size: 1.05rem;
+}
+
+.hero-text,
+.muted {
+  color: var(--muted);
+}
+
+.hero-text {
+  max-width: 760px;
+  margin-top: 14px;
+  line-height: 1.75;
+}
+
+.top-actions,
+.panel-head,
+.section-head,
+.provider-tab {
+  display: flex;
+  align-items: center;
+}
+
+.top-actions {
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0 24px;
+}
+
+.stat-card,
+.meta-card,
+.service-button,
+.live-scenario-card,
+.audit-item {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--panel-soft);
+}
+
+.stat-card,
+.meta-card {
+  padding: 18px;
+}
+
+.stat-card .label,
+.meta-card .label,
+.mini-metric .label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.stat-card .value,
+.meta-card .value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(420px, 470px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.runner-panel,
+.inspector-panel {
+  border-radius: 28px;
+  padding: 22px;
+  min-width: 0;
+}
+
+.runner-panel {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 18px;
+}
+
+.panel-head {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panel-head.compact {
+  margin-bottom: 4px;
+}
+
+.runner-section {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.section-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.provider-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.provider-tab {
+  justify-content: center;
+  padding: 12px 10px;
+  border-radius: 16px;
+  background: rgba(103, 163, 255, 0.1);
+  border: 1px solid rgba(103, 163, 255, 0.12);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.provider-tab.active {
+  background: linear-gradient(135deg, rgba(125, 226, 255, 0.22), rgba(103, 163, 255, 0.18));
+  border-color: rgba(125, 226, 255, 0.4);
+  color: #fff;
+}
+
+.provider-summary-list,
+.meta-list {
+  display: grid;
+  gap: 12px;
+}
+
+.meta-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(4, 16, 31, 0.52);
+}
+
+.meta-item-label {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+
+.meta-item-value {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.45;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.meta-item-value.is-link {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+.meta-item-value.is-link:hover {
+  text-decoration: underline;
+}
+
+.provider-summary-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(4, 16, 31, 0.52);
+}
+
+.provider-summary-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.provider-summary-row + .provider-summary-row {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.provider-summary-label {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  flex: 0 0 120px;
+}
+
+.provider-summary-value {
+  color: var(--text);
+  font-size: 0.98rem;
+  line-height: 1.45;
+  font-weight: 700;
+  min-width: 0;
+  text-align: right;
+  word-break: break-word;
+}
+
+.provider-summary-value a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+.provider-summary-value a:hover {
+  text-decoration: underline;
+}
+
+.live-scenario-card {
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.scenario-list {
+  display: grid;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.service-button {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.service-button.active {
+  border-color: rgba(125, 226, 255, 0.38);
+  background: linear-gradient(135deg, rgba(103, 163, 255, 0.16), rgba(125, 226, 255, 0.08));
+}
+
+.service-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(125, 226, 255, 0.22);
+}
+
+.service-title-row,
+.badge-row,
+.meta-row,
+.result-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.service-title-row {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.service-caption {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.service-button strong,
+.live-scenario-card strong {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.inspector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.inspector-card {
+  border-radius: 24px;
+  padding: 18px;
+  min-width: 0;
+}
+
+.inspector-card-wide {
+  grid-column: span 2;
+}
+
+.flow-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.flow-steps li strong {
+  color: var(--text);
+  display: block;
+  margin-bottom: 3px;
+}
+
+.result-summary {
+  margin-bottom: 14px;
+}
+
+.result-panel {
+  margin: 0;
+  overflow: auto;
+  max-height: 520px;
+  border-radius: 20px;
+  padding: 16px;
+  background: #04101f;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #bfe0ff;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.audit-panel {
+  display: grid;
+  gap: 10px;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.audit-item {
+  padding: 14px;
+}
+
+.audit-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.audit-method {
+  color: var(--mint);
+  font-weight: 700;
+}
+
+.audit-url {
+  color: var(--muted);
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.pill,
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(103, 163, 255, 0.12);
+  color: var(--cyan);
+  font-size: 0.78rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.pill-ok,
+.status-ok {
+  color: var(--mint);
+}
+
+.pill-warn,
+.status-warn {
+  color: var(--amber);
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 160ms ease, opacity 160ms ease, background 160ms ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn:hover { transform: translateY(-1px); }
+.btn:disabled { opacity: 0.55; cursor: wait; transform: none; }
+
+.btn-primary {
+  color: #04111f;
+  background: linear-gradient(135deg, var(--cyan), var(--blue));
+}
+
+.btn-secondary,
+.btn-ghost {
+  color: var(--text);
+  background: rgba(103, 163, 255, 0.12);
+  border: 1px solid rgba(103, 163, 255, 0.16);
+}
+
+@media (max-width: 1220px) {
+  .workspace,
+  .topbar,
+  .inspector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .runner-panel {
+    position: static;
+  }
+
+  .inspector-card-wide {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 820px) {
+  .shell {
+    width: calc(100vw - 20px);
+    padding-top: 12px;
+  }
+
+  .summary-strip,
+  .provider-tabs,
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-summary-row {
+    display: grid;
+    gap: 6px;
+  }
+
+  .provider-summary-value {
+    text-align: left;
+  }
+
+  .topbar,
+  .runner-panel,
+  .inspector-panel,
+  .inspector-card {
+    border-radius: 20px;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+}
+
+</style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="eyebrow">Dargio CloudSight POC</div>
+        <h1>Multi-cloud test playground</h1>
+        <p class="hero-text">
+          Pick any cloud service on the left, run a proof, and watch how CloudSight captures, normalizes,
+          prices, and explains the event on the right.
+        </p>
+      </div>
+      <div class="top-actions">
+        <button id="runRealtime" class="btn btn-primary">Run all collectors</button>
+        <button id="refreshOverview" class="btn btn-secondary">Refresh</button>
+        <a class="btn btn-secondary" href="https://dargio-cloudsight-ui.onrender.com/" target="_blank" rel="noreferrer">Open CloudSight</a>
+      </div>
+    </header>
+
+    <section class="summary-strip" id="heroStats"></section>
+
+    <main class="workspace">
+      <aside class="runner-panel">
+        <div class="panel-head compact">
+          <div>
+            <div class="panel-label">Step 1</div>
+            <h2>Choose a test</h2>
+          </div>
+        </div>
+
+        <div id="providerTabs" class="provider-tabs"></div>
+
+        <section class="runner-section">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Selected cloud</div>
+              <h3 id="selectedProviderTitle">Provider</h3>
+            </div>
+            <span id="selectedProviderStatus" class="status-chip">—</span>
+          </div>
+          <p id="selectedProviderSummary" class="muted"></p>
+          <div id="selectedProviderMeta" class="provider-summary-list"></div>
+        </section>
+
+        <section class="runner-section">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Live proof</div>
+              <h3>Fastest client demo</h3>
+            </div>
+          </div>
+          <div id="liveScenarioCard" class="live-scenario-card"></div>
+        </section>
+
+        <section class="runner-section">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Service families</div>
+              <h3>Run any modeled family</h3>
+            </div>
+          </div>
+          <div id="scenarioList" class="scenario-list"></div>
+        </section>
+      </aside>
+
+      <section class="inspector-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Step 2</div>
+            <h2>See what CloudSight captured</h2>
+            <p class="muted">This view explains the end-to-end flow in plain language so clients can understand what happened without reading raw logs first.</p>
+          </div>
+        </div>
+
+        <div class="inspector-grid">
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Current test</div>
+                <h3 id="selectedScenarioTitle">Pick a service</h3>
+              </div>
+              <button id="runSelectedScenario" class="btn btn-primary">Run selected test</button>
+            </div>
+            <p id="selectedScenarioSummary" class="muted"></p>
+            <div id="selectedScenarioBadges" class="badge-row"></div>
+          </section>
+
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Capture flow</div>
+                <h3>How the signal moved</h3>
+              </div>
+            </div>
+            <ol id="flowSteps" class="flow-steps"></ol>
+          </section>
+
+          <section class="inspector-card inspector-card-wide">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">CloudSight output</div>
+                <h3>Result details</h3>
+              </div>
+            </div>
+            <div id="resultSummary" class="result-summary"></div>
+            <pre id="resultPanel" class="result-panel">Select a service on the left and run it.</pre>
+          </section>
+
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Workspace snapshot</div>
+                <h3>What the product sees now</h3>
+              </div>
+            </div>
+            <div id="overviewGrid" class="overview-grid"></div>
+          </section>
+
+          <section class="inspector-card">
+            <div class="section-head">
+              <div>
+                <div class="panel-label">Audit trail</div>
+                <h3>Recent collector and API events</h3>
+              </div>
+              <button id="refreshAudit" class="btn btn-ghost">Reload</button>
+            </div>
+            <div id="auditPanel" class="audit-panel"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+const heroStats = document.getElementById("heroStats");
+const providerTabs = document.getElementById("providerTabs");
+const selectedProviderTitle = document.getElementById("selectedProviderTitle");
+const selectedProviderStatus = document.getElementById("selectedProviderStatus");
+const selectedProviderSummary = document.getElementById("selectedProviderSummary");
+const selectedProviderMeta = document.getElementById("selectedProviderMeta");
+const liveScenarioCard = document.getElementById("liveScenarioCard");
+const scenarioList = document.getElementById("scenarioList");
+const selectedScenarioTitle = document.getElementById("selectedScenarioTitle");
+const selectedScenarioSummary = document.getElementById("selectedScenarioSummary");
+const selectedScenarioBadges = document.getElementById("selectedScenarioBadges");
+const runSelectedScenario = document.getElementById("runSelectedScenario");
+const flowSteps = document.getElementById("flowSteps");
+const resultSummary = document.getElementById("resultSummary");
+const resultPanel = document.getElementById("resultPanel");
+const overviewGrid = document.getElementById("overviewGrid");
+const auditPanel = document.getElementById("auditPanel");
+const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
+
+const state = {
+  models: [],
+  selectedProvider: null,
+  selectedScenarioId: null,
+  lastRun: null
+};
+
+document.getElementById("refreshOverview").addEventListener("click", loadAll);
+document.getElementById("refreshAudit").addEventListener("click", loadAudit);
+document.getElementById("runRealtime").addEventListener("click", () => runRealtime());
+runSelectedScenario.addEventListener("click", () => runSelected());
+
+async function json(url, options) {
+  const response = await fetch(`${API_BASE}${url}`, options);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`${response.status} ${text || response.statusText}`);
+  }
+  return response.json();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number.toLocaleString() : String(value ?? "—");
+}
+
+function shortUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return `${url.hostname}${url.pathname === "/" ? "" : url.pathname}`;
+  } catch (error) {
+    return String(value ?? "—");
+  }
+}
+
+function summaryCards(overview) {
+  const collectors = overview.cloudSight?.connections?.collectorSummary || {};
+  return [
+    ["Providers", overview.coverage?.providerCount ?? 4],
+    ["Modeled tests", overview.coverage?.modeledScenarioCount ?? 0],
+    ["Healthy collectors", collectors.healthyCollectors ?? "—"],
+    ["Live-ready clouds", (overview.liveSetup || []).filter((item) => item.configured).length]
+  ];
+}
+
+function renderHeroStats(overview) {
+  heroStats.innerHTML = summaryCards(overview).map(([label, value]) => `
+    <div class="stat-card">
+      <div class="label">${label}</div>
+      <div class="value">${formatCount(value)}</div>
+    </div>
+  `).join("");
+}
+
+function buildModels({ overview, scenarios, liveSetup, catalogs }) {
+  return (overview.collectors || []).map((collector) => {
+    const provider = collector.provider;
+    const setup = (liveSetup || []).find((item) => item.provider === provider) || {};
+    const catalog = (catalogs || []).find((item) => item.provider === provider) || {};
+    const providerScenarios = (scenarios || []).filter((item) => item.provider === provider);
+    const liveScenario = providerScenarios.find((item) => item.executionMode === "live-provider-call") || null;
+    const serviceScenarios = providerScenarios.filter((item) => item.executionMode !== "live-provider-call");
+    return {
+      provider,
+      collector,
+      setup,
+      catalog,
+      liveScenario,
+      serviceScenarios
+    };
+  });
+}
+
+function statusLabel(configured, selectedService) {
+  return configured ? `Live ready: ${selectedService}` : "Collector-ready only";
+}
+
+function renderProviderTabs() {
+  providerTabs.innerHTML = state.models.map((model) => `
+    <button class="provider-tab ${model.provider === state.selectedProvider ? "active" : ""}" data-provider-tab="${model.provider}">
+      ${model.provider}
+    </button>
+  `).join("");
+
+  providerTabs.querySelectorAll("[data-provider-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedProvider = button.dataset.providerTab;
+      const model = getSelectedModel();
+      state.selectedScenarioId = model?.liveScenario?.id || model?.serviceScenarios?.[0]?.id || null;
+      renderSelectedProvider();
+      renderSelectedScenario();
+    });
+  });
+}
+
+function getSelectedModel() {
+  return state.models.find((model) => model.provider === state.selectedProvider) || null;
+}
+
+function getSelectedScenario() {
+  const model = getSelectedModel();
+  if (!model) {
+    return null;
+  }
+  return [model.liveScenario, ...model.serviceScenarios].find((scenario) => scenario?.id === state.selectedScenarioId) || model.liveScenario || model.serviceScenarios[0] || null;
+}
+
+function renderSelectedProvider() {
+  const model = getSelectedModel();
+  if (!model) {
+    return;
+  }
+
+  selectedProviderTitle.textContent = model.provider;
+  selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof");
+  selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
+  selectedProviderSummary.textContent = model.setup.configured
+    ? `This cloud is ready for a real provider proof and collector verification.`
+    : `Collector replay is ready now. Add live credentials later if you want a real provider call.`;
+
+  const familyCount = (model.catalog.serviceFamilies || []).length;
+  selectedProviderMeta.innerHTML = `
+    <div class="provider-summary-card">
+      <div class="provider-summary-row">
+        <div class="provider-summary-label">Live proof</div>
+        <div class="provider-summary-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
+      </div>
+      <div class="provider-summary-row">
+        <div class="provider-summary-label">Modeled families</div>
+        <div class="provider-summary-value">${escapeHtml(String(familyCount))}</div>
+      </div>
+      <div class="provider-summary-row">
+        <div class="provider-summary-label">Collector endpoint</div>
+        <div class="provider-summary-value">
+          <a href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(model.collector.collectorUrl))}</a>
+        </div>
+      </div>
+    </div>
+  `;
+
+  liveScenarioCard.innerHTML = model.liveScenario ? `
+    <div class="service-title-row">
+      <strong>${escapeHtml(model.liveScenario.title)}</strong>
+      <span class="pill ${model.setup.configured ? "pill-ok" : "pill-warn"}">${model.setup.configured ? "Configured" : "Needs creds"}</span>
+    </div>
+    <div class="service-caption">${escapeHtml(model.liveScenario.realCloudNote || "Runs a real provider proof when credentials are configured.")}</div>
+    <div class="badge-row">
+      <span class="pill">${escapeHtml(model.liveScenario.primaryEndpoint)}</span>
+      <span class="pill">${escapeHtml(model.liveScenario.signalType)}</span>
+      <span class="pill">${escapeHtml(model.liveScenario.executionMode)}</span>
+    </div>
+  ` : "<div class='service-caption'>No live proof configured for this provider.</div>";
+
+  scenarioList.innerHTML = [model.liveScenario, ...model.serviceScenarios].filter(Boolean).map((scenario) => `
+    <button class="service-button ${scenario.id === state.selectedScenarioId ? "active" : ""}" data-scenario-select="${scenario.id}">
+      <div class="service-title-row">
+        <strong>${escapeHtml(scenario.serviceFamily)}</strong>
+        <span class="pill ${scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">${escapeHtml(scenario.executionMode === "live-provider-call" ? "live" : "collector")}</span>
+      </div>
+      <div class="service-caption">${escapeHtml(scenario.title)}</div>
+    </button>
+  `).join("");
+
+  scenarioList.querySelectorAll("[data-scenario-select]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedScenarioId = button.dataset.scenarioSelect;
+      renderSelectedProvider();
+      renderSelectedScenario();
+    });
+  });
+}
+
+function renderSelectedScenario() {
+  const scenario = getSelectedScenario();
+  const model = getSelectedModel();
+  if (!scenario || !model) {
+    return;
+  }
+
+  selectedScenarioTitle.textContent = scenario.title;
+  selectedScenarioSummary.textContent = scenario.realCloudNote || `Runs the ${scenario.serviceFamily} scenario through the ${model.provider} collector.`;
+  selectedScenarioBadges.innerHTML = `
+    <span class="pill">${escapeHtml(model.provider)}</span>
+    <span class="pill">${escapeHtml(scenario.primaryEndpoint)}</span>
+    <span class="pill">${escapeHtml(scenario.signalType)}</span>
+    <span class="pill ${scenario.executionMode === "live-provider-call" ? "pill-ok" : ""}">${escapeHtml(scenario.executionMode)}</span>
+  `;
+
+  runSelectedScenario.disabled = scenario.executionMode === "live-provider-call" && !model.setup.configured;
+  runSelectedScenario.textContent = scenario.executionMode === "live-provider-call"
+    ? (model.setup.configured ? "Run live + verify" : "Configure live credentials")
+    : "Run collector test";
+
+  renderFlowExplanation(scenario, null);
+}
+
+function buildFlowItems(scenario, result) {
+  const provider = scenario.provider;
+  const isLive = scenario.executionMode === "live-provider-call";
+  const liveCall = result?.liveCall;
+  const dispatch = result?.dispatch;
+  const verification = result?.verification;
+
+  const steps = [
+    {
+      title: "Trigger",
+      body: isLive
+        ? `${provider} made a real provider call for ${scenario.serviceFamily}.`
+        : `${provider} generated a safe provider-native collector payload for ${scenario.serviceFamily}.`
+    },
+    {
+      title: "Collector",
+      body: dispatch?.collectorUrl
+        ? `The ${provider} collector received the signal and normalized it before sending it to CloudSight.`
+        : `The ${provider} collector will normalize this signal into CloudSight endpoints.`
+    },
+    {
+      title: "CloudSight ingestion",
+      body: dispatch?.result?.stored
+        ? `CloudSight accepted ${dispatch.result.stored} event(s) and stored the normalized usage row.`
+        : `CloudSight will store the matching usage row once the collector dispatch completes.`
+    },
+    {
+      title: "Verification",
+      body: verification?.status && verification.status !== "SKIPPED"
+        ? `CloudSight verification returned ${verification.status}.`
+        : "The verification step checks usage, dashboard, or report readback for the matching entry."
+    }
+  ];
+
+  if (liveCall?.resource) {
+    steps[0].body += ` Resource proof: ${Object.entries(liveCall.resource).map(([key, value]) => `${key}=${value}`).join(", ")}.`;
+  }
+  return steps;
+}
+
+function renderFlowExplanation(scenario, result) {
+  flowSteps.innerHTML = buildFlowItems(scenario, result).map((step) => `
+    <li>
+      <strong>${escapeHtml(step.title)}</strong>
+      ${escapeHtml(step.body)}
+    </li>
+  `).join("");
+}
+
+function renderResultSummary(result, scenario) {
+  if (!result) {
+    resultSummary.innerHTML = `
+      <span class="pill">${escapeHtml(scenario.provider)}</span>
+      <span class="pill">${escapeHtml(scenario.serviceFamily)}</span>
+      <span class="pill">${escapeHtml(scenario.executionMode)}</span>
+    `;
+    return;
+  }
+
+  const dispatch = result.dispatch || {};
+  const verification = result.verification || {};
+  const liveCall = result.liveCall || {};
+  const chips = [
+    scenario.provider,
+    scenario.serviceFamily,
+    dispatch.status || result.status || "PENDING",
+    verification.status || "SKIPPED"
+  ];
+
+  if (liveCall.status) {
+    chips.push(`live:${liveCall.status}`);
+  }
+
+  resultSummary.innerHTML = chips.map((chip, index) => `
+    <span class="pill ${index >= 2 && /SUCCESS/i.test(chip) ? "pill-ok" : ""}">${escapeHtml(chip)}</span>
+  `).join("");
+}
+
+async function runSelected() {
+  const scenario = getSelectedScenario();
+  if (!scenario) {
+    return;
+  }
+
+  runSelectedScenario.disabled = true;
+  runSelectedScenario.textContent = scenario.executionMode === "live-provider-call" ? "Running live…" : "Running collector…";
+
+  try {
+    const result = scenario.executionMode === "live-provider-call"
+      ? await json(`/demo/live/providers/${scenario.provider}/run?verify=true`, { method: "POST" })
+      : await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" });
+
+    state.lastRun = result;
+    renderFlowExplanation(scenario, result);
+    renderResultSummary(result, scenario);
+    resultPanel.textContent = JSON.stringify(result, null, 2);
+    await loadAudit();
+    await refreshWorkspaceSnapshot();
+  } catch (error) {
+    resultPanel.textContent = error.stack || String(error);
+  } finally {
+    renderSelectedScenario();
+  }
+}
+
+async function runRealtime() {
+  const button = document.getElementById("runRealtime");
+  button.disabled = true;
+  button.textContent = "Running all…";
+  try {
+    const result = await json("/demo/bootstrap/realtime", { method: "POST" });
+    state.lastRun = result;
+    resultPanel.textContent = JSON.stringify(result, null, 2);
+    resultSummary.innerHTML = `
+      <span class="pill pill-ok">${escapeHtml(result.status || "SUCCESS")}</span>
+      <span class="pill">${escapeHtml(result.integrationOption || "realtime")}</span>
+    `;
+    const scenario = getSelectedScenario();
+    if (scenario) {
+      renderFlowExplanation(scenario, result);
+    }
+    await loadAll();
+  } catch (error) {
+    resultPanel.textContent = error.stack || String(error);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Run all collectors";
+  }
+}
+
+function renderOverviewCards(overview) {
+  const dashboard = overview.cloudSight?.dashboardOverview || {};
+  const usage = overview.cloudSight?.usageSummary || {};
+  const connections = overview.cloudSight?.connections?.summary || {};
+  const cards = [
+    ["Auth state", overview.cloudSight?.auth || "UNKNOWN"],
+    ["Current spend", dashboard.currentSpend ?? "—"],
+    ["Total requests", dashboard.totalRequests ?? usage.totalRequests ?? "—"],
+    ["Providers connected", connections.providersConnected ?? "—"]
+  ];
+  overviewGrid.innerHTML = cards.map(([label, value]) => `
+    <div class="meta-card">
+      <div class="label">${label}</div>
+      <div class="value">${escapeHtml(typeof value === "number" ? formatCount(value) : value)}</div>
+    </div>
+  `).join("");
+}
+
+function renderAudit(events) {
+  const recent = (events || []).slice(0, 20);
+  auditPanel.innerHTML = recent.map((event) => {
+    const status = Number(event.responseStatus || 0);
+    const statusClass = status >= 400 ? "status-error" : status >= 300 ? "status-warn" : "status-ok";
+    return `
+      <div class="audit-item">
+        <div class="audit-top">
+          <div><span class="audit-method">${escapeHtml(event.method || "CALL")}</span> <span class="${statusClass}">${status || "—"}</span></div>
+          <div class="muted">${escapeHtml(event.recordedAt || "")}</div>
+        </div>
+        <div class="audit-url">${escapeHtml(event.url || "")}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function loadAudit() {
+  const audit = await json("/demo/audit");
+  renderAudit(audit);
+}
+
+async function refreshWorkspaceSnapshot() {
+  const overview = await json("/demo/overview");
+  renderHeroStats(overview);
+  renderOverviewCards(overview);
+}
+
+async function loadAll() {
+  const [overview, scenarios, liveSetup, catalogs] = await Promise.all([
+    json("/demo/overview"),
+    json("/demo/scenarios"),
+    json("/demo/live/setup"),
+    json("/demo/catalogs")
+  ]);
+
+  state.models = buildModels({ overview, scenarios, liveSetup, catalogs });
+
+  if (!state.selectedProvider && state.models.length) {
+    state.selectedProvider = state.models[0].provider;
+  }
+
+  const selectedModel = getSelectedModel();
+  const validScenarioIds = [selectedModel?.liveScenario, ...(selectedModel?.serviceScenarios || [])].filter(Boolean).map((item) => item.id);
+  if (!validScenarioIds.includes(state.selectedScenarioId)) {
+    state.selectedScenarioId = selectedModel?.liveScenario?.id || selectedModel?.serviceScenarios?.[0]?.id || null;
+  }
+
+  renderHeroStats(overview);
+  renderOverviewCards(overview);
+  renderProviderTabs();
+  renderSelectedProvider();
+  renderSelectedScenario();
+  await loadAudit();
+}
+
+loadAll().catch((error) => {
+  resultPanel.textContent = error.stack || String(error);
+});
+
+</script>
+</body>
+</html>

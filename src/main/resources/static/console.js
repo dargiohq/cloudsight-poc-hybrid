@@ -13,6 +13,7 @@ const flowSteps = document.getElementById("flowSteps");
 const resultSummary = document.getElementById("resultSummary");
 const resultNarrative = document.getElementById("resultNarrative");
 const resultPanel = document.getElementById("resultPanel");
+const responseTabBar = document.getElementById("responseTabBar");
 const overviewGrid = document.getElementById("overviewGrid");
 const readbackNote = document.getElementById("readbackNote");
 const auditPanel = document.getElementById("auditPanel");
@@ -20,8 +21,32 @@ const auditMatchSummary = document.getElementById("auditMatchSummary");
 const usageTableMeta = document.getElementById("usageTableMeta");
 const usageTableBody = document.getElementById("usageTableBody");
 const runStatusBanner = document.getElementById("runStatusBanner");
-const API_BASE = window.location.protocol === "file:" ? "https://cloudsight-poc-hybrid.onrender.com" : "";
+const providerDirectoryOverview = document.getElementById("providerDirectoryOverview");
+const providerDirectoryPage = document.getElementById("providerDirectoryPage");
+const overviewPopularTests = document.getElementById("overviewPopularTests");
+const apiExplorerRequest = document.getElementById("apiExplorerRequest");
+const apiExplorerResponse = document.getElementById("apiExplorerResponse");
+const quickRunDemoSet = document.getElementById("quickRunDemoSet");
+const overviewRunDemoSet = document.getElementById("overviewRunDemoSet");
+const pageSections = Array.from(document.querySelectorAll(".workspace-page"));
+const navPageLinks = Array.from(document.querySelectorAll("[data-nav-page]"));
+const IS_LOCAL_PREVIEW =
+  window.location.protocol === "file:" ||
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+const API_BASE = IS_LOCAL_PREVIEW ? "https://poc.cloudsight.dargio.in" : "";
 const DEMO_VISIBLE_PROVIDERS = ["AWS", "GCP", "AZURE"];
+const DETAIL_PAGES = [
+  { id: "captured", label: "Captured rows" },
+  { id: "audit", label: "Audit trail" },
+  { id: "raw", label: "Raw JSON" }
+];
+const PAGE_IDS = new Set(pageSections.map((section) => section.dataset.page));
+const DETAIL_PAGE_MAP = {
+  captured: "captured-rows",
+  audit: "audit-trail",
+  raw: "raw-json"
+};
 
 const state = {
   models: [],
@@ -29,15 +54,276 @@ const state = {
   selectedScenarioId: null,
   lastRun: null,
   loadingScenarioId: null,
-  runningAll: false
+  runningAll: false,
+  activePage: PAGE_IDS.has(window.location.hash.replace("#", "")) ? window.location.hash.replace("#", "") : "overview"
 };
+
+const LOCAL_PREVIEW_DATA = {
+  overview: {
+    collectors: [
+      {
+        provider: "AWS",
+        collectorUrl: "https://collector-aws.cloudsight.dargio.in",
+        serviceFamilies: ["S3", "Lambda", "EC2 + EBS", "RDS", "API Gateway", "CloudFront", "DynamoDB", "SQS + SNS"],
+        liveProviderReady: true,
+        liveProviderCalls: "Selected live provider call is configured for this collector.",
+        executionMode: "collector-replay + optional live-provider-call"
+      },
+      {
+        provider: "GCP",
+        collectorUrl: "https://collector-gcp.cloudsight.dargio.in",
+        serviceFamilies: ["Cloud Storage", "Gemini", "Vision", "Cloud Run", "GKE runtime", "BigQuery", "Pub/Sub"],
+        liveProviderReady: true,
+        liveProviderCalls: "Selected live provider call is configured for this collector.",
+        executionMode: "collector-replay + optional live-provider-call"
+      },
+      {
+        provider: "AZURE",
+        collectorUrl: "https://collector-azure.cloudsight.dargio.in",
+        serviceFamilies: ["Blob Storage", "VM", "Functions", "Azure OpenAI", "Azure SQL", "Cosmos DB"],
+        liveProviderReady: true,
+        liveProviderCalls: "Selected live provider call is configured for this collector.",
+        executionMode: "collector-replay + optional live-provider-call"
+      }
+    ],
+    coverage: {
+      liveProviderScenarioCount: 3,
+      modeledScenarioCount: 24,
+      catalogFamilyCount: 33,
+      providerCount: 3
+    },
+    cloudSight: {
+      auth: "CONNECTED",
+      readbackMode: "LIVE",
+      connections: {
+        summary: {
+          readinessScore: 93,
+          providersConnected: 3,
+          activeConnections: 3,
+          totalConnections: 3,
+          validatedConnections: 3
+        },
+        collectorSummary: {
+          totalCollectors: 4,
+          collectorsWithIssuedCredentials: 4,
+          eventsReceived: 1363,
+          healthyCollectors: 4,
+          providersWithCollectors: 3,
+          batchesReceived: 151,
+          staleCollectors: 0,
+          automaticCoverage: 100,
+          optionalApiFallback: true,
+          collectorsNeedingSetup: 0
+        }
+      },
+      dashboardOverview: {
+        currentSpend: 126430.24,
+        totalRequests: 1240000,
+        avgCost: 0.1024,
+        activeServices: 142,
+        topService: "Amazon EC2",
+        topServiceShare: 24.7
+      },
+      usageSummary: {
+        totalRequests: 1240000,
+        totalCost: 126430.24,
+        avgCost: 0.1024
+      },
+      message: "Live preview dataset loaded. This view mirrors the intended production workflow for design review."
+    }
+  },
+  liveSetup: [
+    {
+      provider: "AWS",
+      selectedService: "S3 PutObject",
+      configured: true,
+      resources: { bucket: "cs-playground-bucket", region: "us-east-1" }
+    },
+    {
+      provider: "GCP",
+      selectedService: "Cloud Storage object upload",
+      configured: true,
+      resources: { bucket: "cs-playground-bucket", credentialSource: "file" }
+    },
+    {
+      provider: "AZURE",
+      selectedService: "Blob Storage block blob upload",
+      configured: true,
+      resources: { containerSas: "Configured" }
+    }
+  ],
+  catalogs: [
+    {
+      provider: "AWS",
+      serviceFamilies: [
+        { name: "S3", selectedLiveCall: true, status: "collector-ready" },
+        { name: "Lambda", selectedLiveCall: false, status: "collector-ready" },
+        { name: "EC2", selectedLiveCall: false, status: "collector-ready" },
+        { name: "EBS", selectedLiveCall: false, status: "collector-ready" },
+        { name: "RDS", selectedLiveCall: false, status: "collector-ready" },
+        { name: "API Gateway", selectedLiveCall: false, status: "collector-ready" },
+        { name: "CloudFront", selectedLiveCall: false, status: "collector-ready" },
+        { name: "DynamoDB", selectedLiveCall: false, status: "collector-ready" }
+      ]
+    },
+    {
+      provider: "GCP",
+      serviceFamilies: [
+        { name: "Cloud Storage", selectedLiveCall: true, status: "collector-ready" },
+        { name: "Gemini", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Vision", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Cloud Run", selectedLiveCall: false, status: "collector-ready" },
+        { name: "GKE", selectedLiveCall: false, status: "collector-ready" },
+        { name: "BigQuery", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Pub/Sub", selectedLiveCall: false, status: "collector-ready" }
+      ]
+    },
+    {
+      provider: "AZURE",
+      serviceFamilies: [
+        { name: "Blob Storage", selectedLiveCall: true, status: "collector-ready" },
+        { name: "VM", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Functions", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Azure OpenAI", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Azure SQL", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Cosmos DB", selectedLiveCall: false, status: "collector-ready" },
+        { name: "Bandwidth", selectedLiveCall: false, status: "collector-ready" }
+      ]
+    }
+  ],
+  scenarios: [
+    { id: "aws-s3-live", provider: "AWS", title: "Live S3 PutObject", serviceFamily: "S3", primaryEndpoint: "storage.objects.insert", secondaryEndpoint: "storage.objects.get", collectorUrl: "https://collector-aws.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Writes a tiny object to the configured S3 bucket, then forwards the matching collector payload." },
+    { id: "aws-ec2", provider: "AWS", title: "List EC2 instances", serviceFamily: "EC2", primaryEndpoint: "ec2:DescribeInstances", secondaryEndpoint: "ec2:DescribeVolumes", collectorUrl: "https://collector-aws.cloudsight.dargio.in", signalType: "Collector replay", executionMode: "collector-replay", realCloudReady: false, realCloudNote: "Uses a safe EC2-style metric summary through the collector." },
+    { id: "gcp-storage-live", provider: "GCP", title: "Cloud Storage upload", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", secondaryEndpoint: "storage.objects.get", collectorUrl: "https://collector-gcp.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Uploads a tiny object to the configured GCS bucket, then forwards the matching collector payload." },
+    { id: "gcp-bigquery", provider: "GCP", title: "BigQuery query", serviceFamily: "BigQuery", primaryEndpoint: "jobs.insert", secondaryEndpoint: "tables.get", collectorUrl: "https://collector-gcp.cloudsight.dargio.in", signalType: "Collector replay", executionMode: "collector-replay", realCloudReady: false, realCloudNote: "Uses a BigQuery job summary through the collector." },
+    { id: "azure-blob-live", provider: "AZURE", title: "Blob upload", serviceFamily: "Blob Storage", primaryEndpoint: "PutBlob", secondaryEndpoint: "GetBlob", collectorUrl: "https://collector-azure.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Uploads a tiny block blob through the configured SAS URL, then forwards the matching collector payload." },
+    { id: "azure-vm", provider: "AZURE", title: "VM compute summary", serviceFamily: "VM", primaryEndpoint: "vm-core-hour", secondaryEndpoint: "vm-memory-gb-hour", collectorUrl: "https://collector-azure.cloudsight.dargio.in", signalType: "Collector replay", executionMode: "collector-replay", realCloudReady: false, realCloudNote: "Uses VM summaries through the collector." }
+  ],
+  capturedRows: {
+    status: "SUCCESS",
+    page: 0,
+    size: 5,
+    count: 5,
+    rows: [
+      { timestamp: "May 21, 2025 2:41:21 PM", service: "Cloud Storage (GCP)", inputEndpoint: "storage.objects.insert", outputEndpoint: "storage.objects.get", inputUnits: 1, outputUnits: 0, calculatedCost: "$0.0004", bucket: "cs-playground-bucket / test-file-1716302981.txt" },
+      { timestamp: "May 21, 2025 2:36:12 PM", service: "EC2", inputEndpoint: "ec2:DescribeInstances", outputEndpoint: "ec2:DescribeVolumes", inputUnits: 1, outputUnits: 0, calculatedCost: "$0.0012", bucket: "—" },
+      { timestamp: "May 21, 2025 2:24:45 PM", service: "Blob Storage", inputEndpoint: "PutBlob", outputEndpoint: "GetBlob", inputUnits: 1, outputUnits: 0, calculatedCost: "$0.0003", bucket: "cs-playground-container / test-file.txt" },
+      { timestamp: "May 21, 2025 2:20:11 PM", service: "BigQuery", inputEndpoint: "jobs.insert", outputEndpoint: "tables.get", inputUnits: 1, outputUnits: 0, calculatedCost: "$0.0021", bucket: "cs-playground/dataset.table" }
+    ]
+  },
+  audit: [
+    { runId: "preview-gcp-live-1", method: "POST", url: "https://storage.googleapis.com/upload/storage/v1/b/cs-playground-bucket/o", responseStatus: 200, provider: "GCP", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", recordedAt: "2:41:18 PM" },
+    { runId: "preview-gcp-live-1", method: "POST", url: "https://collector-gcp.cloudsight.dargio.in/events", responseStatus: 200, provider: "GCP", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", recordedAt: "2:41:19 PM" },
+    { runId: "preview-gcp-live-1", method: "POST", url: "https://api.cloudsight.dargio.in/api/collector/events", responseStatus: 200, provider: "GCP", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", recordedAt: "2:41:20 PM" },
+    { runId: "preview-gcp-live-1", method: "GET", url: "https://api.cloudsight.dargio.in/api/usage/logs", responseStatus: 200, provider: "GCP", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", recordedAt: "2:41:20 PM" },
+    { runId: "preview-gcp-live-1", method: "GET", url: "https://api.cloudsight.dargio.in/api/dashboard/overview", responseStatus: 200, provider: "GCP", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", recordedAt: "2:41:21 PM" }
+  ]
+};
+
+function clonePreview(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function buildPreviewResult(scenario) {
+  const isGcp = scenario.provider === "GCP";
+  const isAws = scenario.provider === "AWS";
+  const resource = isGcp
+    ? { bucket: "cs-playground-bucket", object: "test-file-1716302981.txt" }
+    : isAws
+      ? { bucket: "cs-playground-bucket", key: "live/aws/test-file-1716302981.txt" }
+      : { container: "cs-playground-container", blob: "test-file.txt" };
+
+  const row = {
+    timestamp: "2025-05-21T14:41:21Z",
+    service: scenario.provider === "GCP" ? "Cloud Storage (GCP)" : scenario.serviceFamily,
+    inputEndpoint: scenario.primaryEndpoint,
+    outputEndpoint: scenario.secondaryEndpoint,
+    inputUnits: 1,
+    outputUnits: 0,
+    calculatedCost: scenario.provider === "AWS" ? "0.0012" : scenario.provider === "AZURE" ? "0.0003" : "0.0004",
+    sourceType: scenario.executionMode === "live-provider-call" ? "LIVE_API" : "COLLECTOR_REPLAY",
+    sourceReference: Object.values(resource).join(" / "),
+    ingestionMode: "COLLECTOR"
+  };
+
+  return {
+    runId: scenario.provider === "GCP" ? "preview-gcp-live-1" : `${scenario.provider.toLowerCase()}-preview-run`,
+    status: "SUCCESS",
+    liveCall: {
+      status: scenario.executionMode === "live-provider-call" ? "SUCCESS" : "SKIPPED",
+      resource
+    },
+    dispatch: {
+      status: "SUCCESS",
+      collectorUrl: scenario.collectorUrl,
+      result: {
+        deliveryMode: "COLLECTOR_USAGE_RELAY",
+        response: {
+          stored: 1,
+          results: [row]
+        }
+      }
+    },
+    verification: {
+      status: "SUCCESS",
+      fallback: false,
+      matchedLogs: [row],
+      latestLog: row
+    }
+  };
+}
+
+function localPreviewResponse(url) {
+  const requestUrl = new URL(url, "https://poc.cloudsight.dargio.in");
+  const path = requestUrl.pathname;
+
+  if (path === "/demo/overview") {
+    return clonePreview(LOCAL_PREVIEW_DATA.overview);
+  }
+  if (path === "/demo/scenarios") {
+    return clonePreview(LOCAL_PREVIEW_DATA.scenarios);
+  }
+  if (path === "/demo/live/setup") {
+    return clonePreview(LOCAL_PREVIEW_DATA.liveSetup);
+  }
+  if (path === "/demo/catalogs") {
+    return clonePreview(LOCAL_PREVIEW_DATA.catalogs);
+  }
+  if (path === "/demo/audit") {
+    return clonePreview(LOCAL_PREVIEW_DATA.audit);
+  }
+  if (path === "/demo/captured-rows") {
+    return clonePreview(LOCAL_PREVIEW_DATA.capturedRows);
+  }
+  if (path.startsWith("/demo/live/providers/") && path.endsWith("/run")) {
+    const provider = path.split("/")[4];
+    const scenario = LOCAL_PREVIEW_DATA.scenarios.find((item) => item.provider === provider && item.executionMode === "live-provider-call");
+    return clonePreview(buildPreviewResult(scenario || LOCAL_PREVIEW_DATA.scenarios[0]));
+  }
+  if (path.startsWith("/demo/scenarios/") && path.endsWith("/run")) {
+    const scenarioId = path.split("/")[3];
+    const scenario = LOCAL_PREVIEW_DATA.scenarios.find((item) => item.id === scenarioId);
+    return clonePreview(buildPreviewResult(scenario || LOCAL_PREVIEW_DATA.scenarios[0]));
+  }
+
+  throw new Error(`No local preview response registered for ${path}`);
+}
 
 document.getElementById("refreshOverview").addEventListener("click", loadAll);
 document.getElementById("refreshAudit").addEventListener("click", loadAudit);
 document.getElementById("runRealtime").addEventListener("click", () => runRealtime());
+if (overviewRunDemoSet) {
+  overviewRunDemoSet.addEventListener("click", () => runRealtime());
+}
+if (quickRunDemoSet) {
+  quickRunDemoSet.addEventListener("click", () => runRealtime());
+}
 runSelectedScenario.addEventListener("click", () => runSelected());
 
 async function json(url, options) {
+  if (IS_LOCAL_PREVIEW) {
+    return localPreviewResponse(url);
+  }
   const response = await fetch(`${API_BASE}${url}`, options);
   if (!response.ok) {
     const text = await response.text();
@@ -69,6 +355,78 @@ function shortUrl(value) {
   }
 }
 
+function renderResponseTabs() {
+  responseTabBar.innerHTML = DETAIL_PAGES.map((tab) => {
+    const pageId = DETAIL_PAGE_MAP[tab.id];
+    return `
+      <button
+        class="response-tab ${state.activePage === pageId ? "active" : ""}"
+        data-nav-page="${pageId}"
+        type="button"
+      >
+        ${escapeHtml(tab.label)}
+      </button>
+    `;
+  }).join("");
+
+  responseTabBar.querySelectorAll("[data-nav-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setActivePage(button.dataset.navPage);
+    });
+  });
+}
+
+function syncActivePage() {
+  pageSections.forEach((section) => {
+    const isActive = section.dataset.page === state.activePage;
+    section.classList.toggle("is-active", isActive);
+    section.hidden = !isActive;
+  });
+
+  navPageLinks.forEach((link) => {
+    link.classList.toggle("active", link.dataset.navPage === state.activePage);
+  });
+
+  renderResponseTabs();
+}
+
+function setActivePage(nextPage, options = {}) {
+  if (!PAGE_IDS.has(nextPage)) {
+    return;
+  }
+
+  state.activePage = nextPage;
+  syncActivePage();
+
+  if (!options.skipHashUpdate) {
+    window.history.replaceState(null, "", `#${nextPage}`);
+  }
+
+  if (!options.skipScroll) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+
+function bindPageNavigation() {
+  navPageLinks.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const nextPage = link.dataset.navPage;
+      if (!nextPage) {
+        return;
+      }
+      event.preventDefault();
+      setActivePage(nextPage);
+    });
+  });
+
+  window.addEventListener("hashchange", () => {
+    const nextPage = window.location.hash.replace("#", "");
+    if (PAGE_IDS.has(nextPage)) {
+      setActivePage(nextPage, { skipHashUpdate: true, skipScroll: true });
+    }
+  });
+}
+
 function summaryCards(overview) {
   const collectors = overview.cloudSight?.connections?.collectorSummary || {};
   const visibleModels = state.models.length ? state.models : buildModels({
@@ -77,7 +435,8 @@ function summaryCards(overview) {
     liveSetup: overview.liveSetup || [],
     catalogs: []
   });
-  const modeledTests = visibleModels.reduce((sum, model) => sum + (model.liveScenario ? 1 : 0) + model.serviceScenarios.length, 0);
+  const modeledTests = overview.coverage?.modeledScenarioCount
+    ?? visibleModels.reduce((sum, model) => sum + (model.liveScenario ? 1 : 0) + model.serviceScenarios.length, 0);
   const liveReadyClouds = visibleModels.filter((model) => model.setup.configured).length;
   return [
     ["Demo clouds", visibleModels.length || DEMO_VISIBLE_PROVIDERS.length],
@@ -88,10 +447,18 @@ function summaryCards(overview) {
 }
 
 function renderHeroStats(overview) {
+  const helperMap = {
+    "Demo clouds": "AWS, GCP, Azure",
+    "Demo tests": "ready to run",
+    "Healthy collectors": "live & ready",
+    "Live-ready clouds": "ready for proof"
+  };
+
   heroStats.innerHTML = summaryCards(overview).map(([label, value]) => `
     <div class="stat-card">
       <div class="label">${label}</div>
       <div class="value">${formatCount(value)}</div>
+      <div class="stat-helper">${escapeHtml(helperMap[label] || "")}</div>
     </div>
   `).join("");
 }
@@ -167,21 +534,17 @@ function renderSelectedProvider() {
 
   const familyCount = (model.catalog.serviceFamilies || []).length;
   selectedProviderMeta.innerHTML = `
-    <div class="provider-summary-card">
-      <div class="provider-summary-row">
-        <div class="provider-summary-label">Live proof</div>
-        <div class="provider-summary-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
-      </div>
-      <div class="provider-summary-row">
-        <div class="provider-summary-label">Modeled families</div>
-        <div class="provider-summary-value">${escapeHtml(String(familyCount))}</div>
-      </div>
-      <div class="provider-summary-row">
-        <div class="provider-summary-label">Collector endpoint</div>
-        <div class="provider-summary-value">
-          <a href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">Open collector</a>
-        </div>
-      </div>
+    <div class="meta-item">
+      <div class="meta-item-label">Live proof</div>
+      <div class="meta-item-value">${escapeHtml(model.setup.selectedService || "Not configured")}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-item-label">Modeled families</div>
+      <div class="meta-item-value">${escapeHtml(String(familyCount))}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-item-label">Collector endpoint</div>
+      <a class="meta-item-value is-link" href="${escapeHtml(model.collector.collectorUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(model.collector.collectorUrl))}</a>
     </div>
   `;
 
@@ -232,6 +595,7 @@ function renderSelectedScenario() {
       : "Run collector test";
 
   renderFlowExplanation(scenario, null);
+  renderApiExplorer(null, scenario);
 }
 
 function buildFlowItems(scenario, result) {
@@ -447,6 +811,140 @@ function renderUsageTable(result, scenario) {
   }).join("");
 }
 
+function providerTone(model) {
+  if (model.setup?.configured) {
+    return { label: "Live ready", className: "pill-ok" };
+  }
+  return { label: "Collector ready", className: "pill" };
+}
+
+function renderProviderDirectory() {
+  const containers = [providerDirectoryOverview, providerDirectoryPage].filter(Boolean);
+  if (!containers.length) {
+    return;
+  }
+
+  const markup = state.models.map((model) => {
+    const tone = providerTone(model);
+    const familyCount = (model.catalog?.serviceFamilies || []).length;
+    return `
+      <div class="provider-directory-card">
+        <div class="provider-topline">
+          <strong>${escapeHtml(model.provider)}</strong>
+          <span class="pill ${tone.className}">${escapeHtml(tone.label)}</span>
+        </div>
+        <div class="info-row">
+          <strong>Primary proof</strong>
+          <span>${escapeHtml(model.setup?.selectedService || "Not configured")}</span>
+        </div>
+        <div class="info-row">
+          <strong>Modeled families</strong>
+          <span>${escapeHtml(String(familyCount))}</span>
+        </div>
+        <div class="info-row">
+          <strong>Collector</strong>
+          <span>${escapeHtml(shortUrl(model.collector?.collectorUrl || "—"))}</span>
+        </div>
+        <div class="provider-tags">
+          ${(model.catalog?.serviceFamilies || []).slice(0, 5).map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  containers.forEach((container) => {
+    container.innerHTML = markup;
+  });
+}
+
+function renderOverviewPopularTests() {
+  if (!overviewPopularTests) {
+    return;
+  }
+
+  const items = state.models
+    .flatMap((model) => [model.liveScenario, ...model.serviceScenarios].filter(Boolean).map((scenario) => ({
+      provider: model.provider,
+      configured: Boolean(model.setup?.configured),
+      scenario
+    })))
+    .sort((left, right) => {
+      const leftScore = left.scenario.executionMode === "live-provider-call" ? 0 : 1;
+      const rightScore = right.scenario.executionMode === "live-provider-call" ? 0 : 1;
+      return leftScore - rightScore;
+    })
+    .slice(0, 4);
+
+  overviewPopularTests.innerHTML = items.map((item) => `
+    <button class="overview-test-card compact" data-overview-scenario="${item.scenario.id}">
+      <div class="overview-test-topline">
+        <strong>${escapeHtml(item.scenario.title)}</strong>
+        <span class="pill ${item.scenario.executionMode === "live-provider-call" && item.configured ? "pill-ok" : ""}">
+          ${escapeHtml(item.scenario.executionMode === "live-provider-call" && item.configured ? "Live ready" : item.scenario.executionMode === "live-provider-call" ? "Needs creds" : "Collector")}
+        </span>
+      </div>
+      <div class="overview-test-meta">
+        <span>${escapeHtml(item.provider)}</span>
+        <span>${escapeHtml(item.scenario.primaryEndpoint)}</span>
+      </div>
+    </button>
+  `).join("");
+
+  overviewPopularTests.querySelectorAll("[data-overview-scenario]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const scenarioId = button.dataset.overviewScenario;
+      const nextModel = state.models.find((model) => [model.liveScenario, ...model.serviceScenarios].filter(Boolean).some((scenario) => scenario.id === scenarioId));
+      if (!nextModel) {
+        return;
+      }
+      state.selectedProvider = nextModel.provider;
+      state.selectedScenarioId = scenarioId;
+      renderProviderTabs();
+      renderSelectedProvider();
+      renderSelectedScenario();
+      setActivePage("live-test");
+    });
+  });
+}
+
+function sampleRequestContract(scenario) {
+  return {
+    provider: scenario.provider,
+    serviceFamily: scenario.serviceFamily,
+    executionMode: scenario.executionMode,
+    primaryEndpoint: scenario.primaryEndpoint,
+    secondaryEndpoint: scenario.secondaryEndpoint,
+    signalType: scenario.signalType
+  };
+}
+
+function renderApiExplorer(result, scenario) {
+  if (!apiExplorerRequest || !apiExplorerResponse) {
+    return;
+  }
+
+  if (!scenario) {
+    apiExplorerRequest.textContent = "Pick a service to see the current proof contract.";
+    apiExplorerResponse.textContent = "Run a proof to inspect the latest collector result.";
+    return;
+  }
+
+  apiExplorerRequest.textContent = JSON.stringify(sampleRequestContract(scenario), null, 2);
+
+  if (!result) {
+    apiExplorerResponse.textContent = "Run a proof to inspect the latest collector result.";
+    return;
+  }
+
+  apiExplorerResponse.textContent = JSON.stringify({
+    runId: result.runId,
+    liveCall: result.liveCall?.status || "SKIPPED",
+    dispatch: result.dispatch?.status || result.status || "UNKNOWN",
+    verification: result.verification?.status || "SKIPPED",
+    stored: result.dispatch?.result?.response?.stored || 0
+  }, null, 2);
+}
+
 function renderRunReadback(result, scenario) {
   const verification = result?.verification || {};
   const latestLog = verification.latestLog || {};
@@ -532,6 +1030,7 @@ async function runSelected() {
   }
 
   state.loadingScenarioId = scenario.id;
+  setActivePage("live-test", { skipScroll: true });
   renderSelectedProvider();
   renderSelectedScenario();
   setBanner(
@@ -553,6 +1052,7 @@ async function runSelected() {
     renderUsageTable(result, scenario);
     resultPanel.textContent = JSON.stringify(result, null, 2);
     renderRunReadback(result, scenario);
+    renderApiExplorer(result, scenario);
     await loadAudit();
     const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
     setBanner(
@@ -567,6 +1067,7 @@ async function runSelected() {
     renderResultNarrative({ status: "ERROR" }, scenario);
     resultPanel.textContent = error.stack || String(error);
     renderUsageTable(null, scenario);
+    renderApiExplorer(null, scenario);
     setBanner(`The ${scenario.serviceFamily} run failed before CloudSight could confirm it.`, "error");
   } finally {
     state.loadingScenarioId = null;
@@ -578,6 +1079,7 @@ async function runSelected() {
 async function runRealtime() {
   const button = document.getElementById("runRealtime");
   state.runningAll = true;
+  setActivePage("live-test", { skipScroll: true });
   button.disabled = true;
   button.textContent = "Running demo set…";
   setBanner("Running the AWS, GCP, and Azure live collector proofs one by one.", "running");
@@ -615,6 +1117,7 @@ async function runRealtime() {
       renderFlowExplanation(scenario, state.lastRun);
       renderUsageTable(state.lastRun, scenario);
       renderRunReadback(state.lastRun, scenario);
+      renderApiExplorer(state.lastRun, scenario);
     }
     await loadAll();
     setBanner(
@@ -735,15 +1238,31 @@ async function loadAll() {
     state.selectedScenarioId = selectedModel?.liveScenario?.id || selectedModel?.serviceScenarios?.[0]?.id || null;
   }
 
+  if (IS_LOCAL_PREVIEW) {
+    state.selectedProvider = "GCP";
+    state.selectedScenarioId = "gcp-storage-live";
+    state.lastRun = buildPreviewResult(getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
+  }
+
   renderHeroStats(overview);
   renderOverviewCards(overview);
+  syncActivePage();
   renderProviderTabs();
   renderSelectedProvider();
   renderSelectedScenario();
-  renderResultNarrative(null, getSelectedScenario() || { serviceFamily: "proof" });
-  renderUsageTable(null, getSelectedScenario() || {});
+  renderProviderDirectory();
+  renderOverviewPopularTests();
+  renderResultSummary(state.lastRun, getSelectedScenario() || { serviceFamily: "proof", provider: "GCP" });
+  renderFlowExplanation(getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0], state.lastRun);
+  renderResultNarrative(state.lastRun, getSelectedScenario() || { serviceFamily: "proof" });
+  renderUsageTable(state.lastRun, getSelectedScenario() || {});
+  renderRunReadback(state.lastRun, getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
+  renderApiExplorer(state.lastRun, getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
   await loadAudit();
 }
+
+bindPageNavigation();
+syncActivePage();
 
 loadAll().catch((error) => {
   resultPanel.textContent = error.stack || String(error);
