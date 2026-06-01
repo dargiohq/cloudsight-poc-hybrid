@@ -29,6 +29,7 @@ const apiExplorerResponse = document.getElementById("apiExplorerResponse");
 const apiExplorerStatus = document.getElementById("apiExplorerStatus");
 const apiExplorerLatency = document.getElementById("apiExplorerLatency");
 const quickRunDemoSet = document.getElementById("quickRunDemoSet");
+const quickRunDemoSetSecondary = document.getElementById("quickRunDemoSetSecondary");
 const overviewRunDemoSet = document.getElementById("overviewRunDemoSet");
 const pageSections = Array.from(document.querySelectorAll(".workspace-page"));
 const navPageLinks = Array.from(document.querySelectorAll("[data-nav-page]"));
@@ -60,6 +61,10 @@ const state = {
   runningAll: false,
   activePage: PAGE_IDS.has(window.location.hash.replace("#", "")) ? window.location.hash.replace("#", "") : "overview"
 };
+
+if ("scrollRestoration" in window.history) {
+  window.history.scrollRestoration = "manual";
+}
 
 const LOCAL_PREVIEW_DATA = {
   overview: {
@@ -321,6 +326,9 @@ if (overviewRunDemoSet) {
 if (quickRunDemoSet) {
   quickRunDemoSet.addEventListener("click", () => runRealtime());
 }
+if (quickRunDemoSetSecondary) {
+  quickRunDemoSetSecondary.addEventListener("click", () => runRealtime());
+}
 runSelectedScenario.addEventListener("click", () => runSelected());
 
 async function json(url, options) {
@@ -347,6 +355,23 @@ function escapeHtml(value) {
 function formatCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number.toLocaleString() : String(value ?? "—");
+}
+
+function providerLogoMarkup(provider) {
+  if (provider === "AWS") {
+    return '<span class="provider-logo aws-logo">aws</span>';
+  }
+  if (provider === "GCP") {
+    return '<span class="provider-logo gcp-logo">G</span>';
+  }
+  if (provider === "AZURE") {
+    return '<span class="provider-logo azure-logo">A</span>';
+  }
+  return '<span class="provider-logo">C</span>';
+}
+
+function providerLabel(provider) {
+  return provider === "AZURE" ? "Azure" : provider;
 }
 
 function shortUrl(value) {
@@ -460,7 +485,10 @@ function renderHeroStats(overview) {
   heroStats.innerHTML = summaryCards(overview).map(([label, value]) => `
     <div class="stat-card">
       <div class="label">${label}</div>
-      <div class="value">${formatCount(value)}</div>
+      <div class="value">
+        ${formatCount(value)}
+        ${label === "Demo clouds" ? '<span class="metric-provider-row"><span class="provider-logo aws-logo">aws</span><span class="provider-logo gcp-logo">G</span><span class="provider-logo azure-logo">A</span></span>' : ""}
+      </div>
       <div class="stat-helper">${escapeHtml(helperMap[label] || "")}</div>
     </div>
   `).join("");
@@ -495,7 +523,8 @@ function statusLabel(configured, selectedService) {
 function renderProviderTabs() {
   providerTabs.innerHTML = state.models.map((model) => `
     <button class="provider-tab ${model.provider === state.selectedProvider ? "active" : ""}" data-provider-tab="${model.provider}">
-      ${model.provider}
+      ${providerLogoMarkup(model.provider)}
+      ${escapeHtml(providerLabel(model.provider))}
     </button>
   `).join("");
 
@@ -528,7 +557,7 @@ function renderSelectedProvider() {
     return;
   }
 
-  selectedProviderTitle.textContent = model.provider;
+  selectedProviderTitle.textContent = getSelectedScenario()?.serviceFamily || model.provider;
   selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof");
   selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
   selectedProviderSummary.textContent = model.setup.configured
@@ -756,6 +785,14 @@ function rowsFromDispatch(result, scenario) {
   }));
 }
 
+function localPreviewRows(rows) {
+  return (rows || []).map((row) => ({
+    ...row,
+    provider: row.provider || (/EC2|S3/i.test(row.service || "") ? "AWS" : /Blob|Azure/i.test(row.service || "") ? "Azure" : "GCP"),
+    status: row.status || "Stored"
+  }));
+}
+
 function statusTone(status) {
   if (/SUCCESS/i.test(status || "")) {
     return "ok";
@@ -774,7 +811,18 @@ function renderUsageTable(result, scenario) {
       ? [result.verification.latestLog]
       : [];
   const dispatchRows = rowsFromDispatch(result, scenario);
-  const rows = readbackRows.length ? readbackRows : dispatchRows;
+  let rows = readbackRows.length ? readbackRows : dispatchRows;
+
+  if (IS_LOCAL_PREVIEW && state.activePage === "captured-rows") {
+    rows = localPreviewRows(LOCAL_PREVIEW_DATA.capturedRows.rows).slice(0, 4);
+  } else if (IS_LOCAL_PREVIEW && rows.length < 4) {
+    const previewRows = localPreviewRows(LOCAL_PREVIEW_DATA.capturedRows.rows);
+    const seen = new Set(rows.map((row) => `${row.service || ""}-${row.inputEndpoint || ""}-${row.timestamp || ""}`));
+    rows = [
+      ...localPreviewRows(rows),
+      ...previewRows.filter((row) => !seen.has(`${row.service || ""}-${row.inputEndpoint || ""}-${row.timestamp || ""}`))
+    ].slice(0, 4);
+  }
 
   if (!rows.length) {
     usageTableMeta.textContent = result?.verification?.status === "RATE_LIMITED"
@@ -798,7 +846,7 @@ function renderUsageTable(result, scenario) {
 
   usageTableBody.innerHTML = rows.map((row, index) => {
     const primary = row.inputEndpoint || row.primaryEndpoint || "—";
-    const objectName = row.objectName || row.bucketObject || row.resourceName || row.outputEndpoint || row.secondaryEndpoint || "—";
+    const objectName = row.objectName || row.bucketObject || row.bucket || row.resourceName || row.outputEndpoint || row.secondaryEndpoint || "—";
     const units = `${formatCount(row.inputUnits || row.primaryUnits || 0)} / ${formatCount(row.outputUnits || row.secondaryUnits || 0)}`;
     const cost = row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—";
     const when = row.timestamp || row.createdAt || row.recordedAt || "—";
@@ -941,6 +989,12 @@ function renderOverviewPopularTests() {
       scenario
     })))
     .sort((left, right) => {
+      const preferredOrder = ["gcp-storage-live", "aws-ec2", "azure-blob-live", "gcp-bigquery"];
+      const leftPreferred = preferredOrder.indexOf(left.scenario.id);
+      const rightPreferred = preferredOrder.indexOf(right.scenario.id);
+      if (leftPreferred !== -1 || rightPreferred !== -1) {
+        return (leftPreferred === -1 ? 99 : leftPreferred) - (rightPreferred === -1 ? 99 : rightPreferred);
+      }
       const leftScore = left.scenario.executionMode === "live-provider-call" ? 0 : 1;
       const rightScore = right.scenario.executionMode === "live-provider-call" ? 0 : 1;
       return leftScore - rightScore;
@@ -950,13 +1004,13 @@ function renderOverviewPopularTests() {
   overviewPopularTests.innerHTML = items.map((item) => `
     <button class="overview-test-card compact" data-overview-scenario="${item.scenario.id}">
       <div class="overview-test-topline">
-        <strong>${escapeHtml(item.scenario.title)}</strong>
+        <strong>${providerLogoMarkup(item.provider)}${escapeHtml(item.scenario.title)}</strong>
         <span class="pill ${item.scenario.executionMode === "live-provider-call" && item.configured ? "pill-ok" : ""}">
           ${escapeHtml(item.scenario.executionMode === "live-provider-call" && item.configured ? "Live ready" : item.scenario.executionMode === "live-provider-call" ? "Needs creds" : "Collector")}
         </span>
       </div>
       <div class="overview-test-meta">
-        <span>${escapeHtml(item.provider)}</span>
+        <span>${escapeHtml(providerLabel(item.provider))}</span>
         <span>${escapeHtml(item.scenario.primaryEndpoint)}</span>
       </div>
     </button>
@@ -1110,6 +1164,21 @@ function renderRunReadback(result, scenario) {
 }
 
 function auditStage(event) {
+  if ((event.url || "").includes("storage.googleapis.com") || (event.url || "").includes("amazonaws.com") || (event.url || "").includes("blob.core.windows.net")) {
+    return "Provider call";
+  }
+  if ((event.url || "").includes("collector-")) {
+    return "Collector received";
+  }
+  if ((event.url || "").includes("/api/collector/events")) {
+    return "Normalized";
+  }
+  if ((event.url || "").includes("/api/usage/logs")) {
+    return "Stored";
+  }
+  if ((event.url || "").includes("/api/dashboard") || (event.url || "").includes("/api/reports")) {
+    return "Verified";
+  }
   if ((event.integrationOption || "").includes("collector")) {
     return "Collector";
   }
@@ -1119,11 +1188,8 @@ function auditStage(event) {
   if ((event.url || "").includes("/api/usage")) {
     return "Usage ingestion";
   }
-  if ((event.url || "").includes("/api/usage/logs") || (event.url || "").includes("/api/usage/summary")) {
+  if ((event.url || "").includes("/api/usage/summary")) {
     return "Verification";
-  }
-  if ((event.url || "").includes("/api/dashboard") || (event.url || "").includes("/api/reports")) {
-    return "Readback";
   }
   return "API call";
 }
@@ -1289,9 +1355,16 @@ function renderAudit(events) {
     const statusClass = status >= 400 ? "status-error" : status >= 300 ? "status-warn" : "status-ok";
     const isMatch = runId && event.runId === runId;
     const stage = auditStage(event);
-    const detail = event.primaryEndpoint
+    const detailMap = {
+      "Provider call": `${event.provider || "Cloud"} ${event.serviceFamily || event.primaryEndpoint || "provider"} API called successfully.`,
+      "Collector received": `Signal received by ${event.provider || "Cloud"} collector.`,
+      "Normalized": "Signal normalized and prepared.",
+      "Stored": "Row stored in CloudSight.",
+      "Verified": "Verification query confirmed row exists."
+    };
+    const detail = detailMap[stage] || (event.primaryEndpoint
       ? `${event.provider || "Cloud"} ${event.primaryEndpoint} completed.`
-      : event.url || "CloudSight API event recorded.";
+      : event.url || "CloudSight API event recorded.");
     return `
       <div class="audit-item timeline-row ${isMatch ? "audit-item-match" : ""}">
         <div class="timeline-status ${statusClass}">OK</div>
@@ -1391,11 +1464,19 @@ async function loadAll() {
   renderUsageTable(state.lastRun, getSelectedScenario() || {});
   renderRunReadback(state.lastRun, getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
   renderApiExplorer(state.lastRun, getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
+  if (resultPanel && state.lastRun) {
+    resultPanel.textContent = JSON.stringify(state.lastRun, null, 2);
+  }
   await loadAudit();
 }
 
 bindPageNavigation();
 syncActivePage();
+window.scrollTo(0, 0);
+window.addEventListener("load", () => {
+  window.setTimeout(() => window.scrollTo(0, 0), 0);
+  window.setTimeout(() => window.scrollTo(0, 0), 150);
+});
 
 loadAll().catch((error) => {
   resultPanel.textContent = error.stack || String(error);

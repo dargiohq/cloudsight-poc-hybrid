@@ -4,35 +4,38 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Collector Playground</title>
-  <link rel="stylesheet" href="./console.css?v=16">
+  <link rel="stylesheet" href="./console.css?v=17">
 </head>
 <body>
   <div class="playground-app">
     <aside class="side-rail">
       <div class="side-brand">
-        <div class="brand-mark">☁</div>
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 28 20" focusable="false">
+            <path d="M10.3 19H22a6 6 0 0 0 .4-12 8.8 8.8 0 0 0-16.7-2A7.2 7.2 0 0 0 7.1 19h3.2Z" fill="currentColor"/>
+          </svg>
+        </div>
         <div>
           <div class="side-title">CloudSight POC</div>
-          <div class="side-subtitle">Collector-first demo</div>
         </div>
       </div>
 
       <div class="side-group">
-        <div class="side-label">Playground pages</div>
-        <a class="nav-item active" href="#overview" data-nav-page="overview">Overview</a>
-        <a class="nav-item" href="#live-test" data-nav-page="live-test">Live Test</a>
-        <a class="nav-item" href="#captured-rows" data-nav-page="captured-rows">Captured Rows</a>
-        <a class="nav-item" href="#raw-json" data-nav-page="raw-json">Raw JSON</a>
-        <a class="nav-item" href="#audit-trail" data-nav-page="audit-trail">Audit Trail</a>
-        <a class="nav-item" href="#providers" data-nav-page="providers">Providers</a>
-        <a class="nav-item" href="#api-explorer" data-nav-page="api-explorer">API Explorer</a>
+        <div class="side-label">Playground</div>
+        <a class="nav-item active" href="#overview" data-nav-page="overview"><span class="nav-icon">01</span>Overview</a>
+        <a class="nav-item" href="#live-test" data-nav-page="live-test"><span class="nav-icon">02</span>Live Test</a>
+        <a class="nav-item" href="#captured-rows" data-nav-page="captured-rows"><span class="nav-icon">03</span>Captured Rows</a>
+        <a class="nav-item" href="#raw-json" data-nav-page="raw-json"><span class="nav-icon">04</span>Raw JSON</a>
+        <a class="nav-item" href="#audit-trail" data-nav-page="audit-trail"><span class="nav-icon">05</span>Audit Trail</a>
+        <a class="nav-item" href="#providers" data-nav-page="providers"><span class="nav-icon">06</span>Providers</a>
+        <a class="nav-item" href="#api-explorer" data-nav-page="api-explorer"><span class="nav-icon">07</span>API Explorer</a>
       </div>
 
       <div class="side-group">
-        <div class="side-label">Utility pages</div>
-        <a class="nav-item subtle" href="#docs" data-nav-page="docs">Docs</a>
-        <a class="nav-item subtle" href="#environment" data-nav-page="environment">Environment</a>
-        <a class="nav-item subtle" href="#help" data-nav-page="help">Help / Support</a>
+        <div class="side-label">Utility Pages</div>
+        <a class="nav-item subtle" href="#docs" data-nav-page="docs"><span class="nav-icon">08</span>Docs</a>
+        <a class="nav-item subtle" href="#environment" data-nav-page="environment"><span class="nav-icon">09</span>Environment</a>
+        <a class="nav-item subtle" href="#help" data-nav-page="help"><span class="nav-icon">10</span>Help / Support</a>
       </div>
 
       <div class="side-footer">
@@ -42,7 +45,7 @@
         </div>
         <div class="context-card">
           <div class="context-label">Need help?</div>
-          <a href="#docs" class="context-link">View docs</a>
+          <a href="#docs" class="context-link" data-nav-page="docs">View docs</a>
         </div>
       </div>
     </aside>
@@ -51,13 +54,15 @@
       <header class="workspace-topbar">
         <div class="environment-row">
           <span class="live-pill">Live environment</span>
-          <div class="region-pill">us-east-1</div>
+          <button class="region-pill" type="button">us-east-1</button>
         </div>
         <div class="toolbar-actions">
           <a class="toolbar-link" href="#docs">Docs</a>
-          <button id="refreshOverview" class="toolbar-button secondary">Refresh</button>
-          <button id="runRealtime" class="toolbar-button primary">Run demo set</button>
-          <a class="toolbar-button secondary" href="https://cloudsight.dargio.in/" target="_blank" rel="noreferrer">Open CloudSight</a>
+          <button class="icon-button" type="button" aria-label="Help">?</button>
+          <button class="icon-button" type="button" aria-label="Notifications">!</button>
+          <span class="avatar-badge">DA</span>
+          <button id="refreshOverview" class="toolbar-button secondary topbar-refresh">Refresh</button>
+          <button id="runRealtime" class="toolbar-button primary topbar-run">Run demo set</button>
         </div>
       </header>
 
@@ -65,74 +70,122 @@
         <section class="hero-card">
           <div class="hero-headline-row">
             <div class="hero-copy">
-              <div class="hero-label">1. Overview (Home)</div>
+              <div class="hero-label">Overview</div>
               <h1>Multi-cloud Test Playground</h1>
               <p>
-                Run live collector-first proofs for AWS, GCP, and Azure. Each test makes a real provider call, passes through the
-                matching collector, and shows the stored CloudSight row on the right.
+                Run live collector-first proofs for AWS, GCP, and Azure. Each test makes a real provider call,
+                passes through the matching collector, and shows the stored CloudSight row on the right.
               </p>
             </div>
             <div class="hero-actions">
               <button class="toolbar-button primary" type="button" id="overviewRunDemoSet">Run demo set</button>
+              <a class="toolbar-button secondary" href="https://cloudsight.dargio.in/" target="_blank" rel="noreferrer">Open CloudSight</a>
             </div>
           </div>
         </section>
 
         <section class="metric-grid" id="heroStats"></section>
 
-        <section class="quick-start-card overview-quickstart-card">
-          <div class="section-topline">
-            <div>
-              <div class="card-label">Quick start</div>
-              <h2>Follow the proof flow and see CloudSight in action</h2>
+        <section class="proof-board">
+          <article class="proof-column choose-column">
+            <div class="proof-heading">
+              <span>Step 1</span>
+              <strong>Choose a test</strong>
+              <p>Pick a cloud and a test scenario to begin.</p>
             </div>
-          </div>
-          <div class="quick-start-grid">
-            <article class="quick-step-card">
-              <div class="tiny-label">1. Choose a test</div>
-              <p>Pick a cloud and test scenario.</p>
-              <a class="inline-link" href="#live-test" data-nav-page="live-test">Go to Live Test</a>
-            </article>
-            <article class="quick-step-card">
-              <div class="tiny-label">2. Run the proof</div>
-              <p>Call the provider, collector, and CloudSight store path.</p>
-              <a class="inline-link" href="#live-test" data-nav-page="live-test">Run a proof</a>
-            </article>
-            <article class="quick-step-card">
-              <div class="tiny-label">3. See the result</div>
-              <p>Review the captured row and audit confirmation.</p>
-              <a class="inline-link" href="#captured-rows" data-nav-page="captured-rows">Open results</a>
-            </article>
-          </div>
-          <div class="overview-popular-header">
-            <div>
+            <div class="cloud-choice-row">
+              <button class="cloud-choice" type="button"><span class="provider-logo aws-logo">aws</span>AWS</button>
+              <button class="cloud-choice active" type="button"><span class="provider-logo gcp-logo">G</span>GCP</button>
+              <button class="cloud-choice" type="button"><span class="provider-logo azure-logo">A</span>Azure</button>
+            </div>
+            <div class="popular-card">
               <div class="tiny-label">Popular tests</div>
-              <h3>Start with a proven scenario</h3>
+              <div id="overviewPopularTests" class="scenario-overview-list compact"></div>
+              <a class="inline-link overview-link-tight" href="#live-test" data-nav-page="live-test">View all tests</a>
             </div>
-            <a class="inline-link overview-link-tight" href="#live-test" data-nav-page="live-test">View all tests</a>
+          </article>
+
+          <article class="proof-column run-column">
+            <div class="proof-heading">
+              <span>Step 2</span>
+              <strong>Run the proof</strong>
+              <p>We call the provider, forward to the collector, and store the result.</p>
+            </div>
+            <div class="selected-test-card">
+              <div class="tiny-label">Selected test</div>
+              <h3>Cloud Storage upload</h3>
+              <p>GCP</p>
+              <span class="status-chip status-ok">Live ready</span>
+              <div class="thin-divider"></div>
+              <div class="check-list">
+                <span>Call the GCP API</span>
+                <span>Send to collector</span>
+                <span>Store in CloudSight</span>
+                <span>Verify and show result</span>
+              </div>
+              <button class="toolbar-button primary full-width-button" type="button" id="quickRunDemoSet">Run live test</button>
+            </div>
+          </article>
+
+          <article class="proof-column result-column">
+            <div class="proof-heading">
+              <span>Step 3</span>
+              <strong>See the result</strong>
+              <p>Live status, captured row, and audit trail.</p>
+            </div>
+            <div class="success-note">
+              <strong>The run completed successfully.</strong>
+              <span>Live call: SUCCESS &middot; Collector: SUCCESS &middot; Verification: SUCCESS</span>
+            </div>
+            <div class="compact-table-block">
+              <div class="compact-table-head">
+                <strong>Captured row</strong>
+                <a class="inline-link compact-link" href="#captured-rows" data-nav-page="captured-rows">View in CloudSight</a>
+              </div>
+              <table class="mini-row-table">
+                <tbody>
+                  <tr><th>Time</th><td>May 21, 2025 2:41:21 PM</td></tr>
+                  <tr><th>Service</th><td>Cloud Storage (GCP)</td></tr>
+                  <tr><th>Endpoint</th><td>storage.objects.insert</td></tr>
+                  <tr><th>Bucket / Object</th><td>cs-playground-bucket / test-file-1716302981.txt</td></tr>
+                  <tr><th>Cost (est.)</th><td>$0.0004</td></tr>
+                  <tr><th>Status</th><td><span class="status-dot"></span>Stored</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="audit-preview">
+              <div class="compact-table-head">
+                <strong>Audit trail (live)</strong>
+                <a class="inline-link compact-link" href="#audit-trail" data-nav-page="audit-trail">View full audit trail</a>
+              </div>
+              <div class="audit-mini-row"><span>2:41:18 PM</span><strong>Provider call</strong><p>GCP Cloud Storage API called successfully.</p></div>
+              <div class="audit-mini-row"><span>2:41:19 PM</span><strong>Collector received</strong><p>Signal received by GCP collector.</p></div>
+              <div class="audit-mini-row"><span>2:41:20 PM</span><strong>Stored</strong><p>Row stored in CloudSight.</p></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="quick-actions-panel">
+          <div class="tiny-label">Quick actions</div>
+          <div class="quick-actions">
+            <button class="quick-card" type="button" id="quickRunDemoSetSecondary">Run demo set<span>Run all tests across clouds</span></button>
+            <a class="quick-card" href="#live-test" data-nav-page="live-test">Live Test<span>Run a single test</span></a>
+            <a class="quick-card" href="#captured-rows" data-nav-page="captured-rows">Captured Rows<span>Browse stored results</span></a>
+            <a class="quick-card" href="#raw-json" data-nav-page="raw-json">Raw JSON<span>View collector payloads</span></a>
+            <a class="quick-card" href="#audit-trail" data-nav-page="audit-trail">Audit Trail<span>View end-to-end logs</span></a>
+            <a class="quick-card" href="#api-explorer" data-nav-page="api-explorer">API Explorer<span>Test API endpoints</span></a>
           </div>
-          <div id="overviewPopularTests" class="scenario-overview-list compact"></div>
         </section>
       </section>
 
       <section class="workspace-page" data-page="live-test" id="live-test">
-        <section class="utility-panel live-header-card">
+        <section class="page-title-panel">
           <div class="section-topline">
             <div>
               <div class="card-label">Live Test</div>
-              <h2>Run a single proof and verify the row in real time</h2>
+              <h1>Live Test</h1>
+              <p class="card-copy">Run a single test and verify the result in real time.</p>
             </div>
-          </div>
-          <div class="step-strip">
-            <div class="step-pill active">Select test</div>
-            <div class="step-strip-arrow">→</div>
-            <div class="step-pill active">Run proof</div>
-            <div class="step-strip-arrow">→</div>
-            <div class="step-pill">Collect</div>
-            <div class="step-strip-arrow">→</div>
-            <div class="step-pill">Store</div>
-            <div class="step-strip-arrow">→</div>
-            <div class="step-pill">Verify</div>
           </div>
         </section>
 
@@ -144,23 +197,21 @@
             <section class="sub-card">
               <div class="sub-card-head">
                 <div>
-                  <div class="tiny-label">Selected cloud</div>
-                  <h3 id="selectedProviderTitle">Provider</h3>
+                  <div class="tiny-label">2. Select service</div>
+                  <h3 id="selectedProviderTitle">Cloud Storage</h3>
                 </div>
                 <span id="selectedProviderStatus" class="status-chip">—</span>
               </div>
-              <p id="selectedProviderSummary" class="muted-copy"></p>
-              <div id="selectedProviderMeta" class="provider-summary-list"></div>
+              <div id="scenarioList" class="scenario-list"></div>
             </section>
 
-            <section class="sub-card">
-              <div class="sub-card-head">
-                <div>
-                  <div class="tiny-label">2. Select test</div>
-                  <h3>Available proofs</h3>
-                </div>
-              </div>
-              <div id="scenarioList" class="scenario-list"></div>
+            <section class="sub-card config-card">
+              <div class="tiny-label">4. Configure</div>
+              <label>Bucket name<input class="table-search" type="text" value="cs-playground-bucket"></label>
+              <label>File name<input class="table-search" type="text" value="test-file-{{timestamp}}.txt"></label>
+              <button class="toolbar-button secondary full-width-button" type="button">Advanced options</button>
+              <p id="selectedProviderSummary" class="muted-copy"></p>
+              <div id="selectedProviderMeta" class="provider-summary-list"></div>
             </section>
           </article>
 
@@ -338,7 +389,7 @@
             <button class="response-tab active" type="button">Response</button>
           </div>
           <div class="api-grid api-grid-reference">
-            <div class="code-card">
+            <div class="code-card request-code-card">
               <div class="tiny-label">Request</div>
               <pre id="apiExplorerRequest" class="mini-code">Pick a service to see the current proof contract.</pre>
             </div>
@@ -473,6 +524,6 @@
     </main>
   </div>
 
-  <script src="./console.js?v=16" defer></script>
+  <script src="./console.js?v=17" defer></script>
 </body>
 </html>
