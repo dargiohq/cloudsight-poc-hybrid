@@ -818,6 +818,13 @@ function providerTone(model) {
   return { label: "Collector ready", className: "pill" };
 }
 
+function serviceFamilyLabel(item) {
+  if (item && typeof item === "object") {
+    return item.name || item.label || item.service || "Service family";
+  }
+  return item || "Service family";
+}
+
 function renderProviderDirectory() {
   const containers = [providerDirectoryOverview, providerDirectoryPage].filter(Boolean);
   if (!containers.length) {
@@ -846,7 +853,7 @@ function renderProviderDirectory() {
           <span>${escapeHtml(shortUrl(model.collector?.collectorUrl || "—"))}</span>
         </div>
         <div class="provider-tags">
-          ${(model.catalog?.serviceFamilies || []).slice(0, 5).map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}
+          ${(model.catalog?.serviceFamilies || []).slice(0, 5).map((item) => `<span class="pill">${escapeHtml(serviceFamilyLabel(item))}</span>`).join("")}
         </div>
       </div>
     `;

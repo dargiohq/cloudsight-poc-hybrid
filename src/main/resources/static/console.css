@@ -113,7 +113,7 @@ textarea {
 .card-label,
 .tiny-label {
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   font-weight: 700;
 }
 
@@ -324,7 +324,7 @@ textarea {
   margin: 10px 0 0;
   font-size: clamp(2rem, 3.2vw, 2.75rem);
   line-height: 1.06;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
 }
 
 .hero-card p {
@@ -353,7 +353,7 @@ textarea {
 .journey-summary-card h2 {
   margin: 10px 0 0;
   font-size: 1.35rem;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .quick-start-card {
@@ -375,7 +375,7 @@ textarea {
 .section-topline h2 {
   margin: 10px 0 0;
   font-size: 1.28rem;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .quick-start-grid {
@@ -410,7 +410,7 @@ textarea {
 .overview-popular-header h3 {
   margin: 6px 0 0;
   font-size: 1rem;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 
 .overview-link-tight {
@@ -531,7 +531,7 @@ textarea {
   margin-top: 8px;
   font-size: 2rem;
   font-weight: 700;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
 }
 
 .stat-helper {
@@ -619,7 +619,7 @@ textarea {
 .utility-panel h2 {
   margin: 10px 0 0;
   font-size: 1.65rem;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .card-copy {
@@ -672,7 +672,7 @@ textarea {
 .sub-card h3 {
   margin: 0;
   font-size: 1.08rem;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 
 .muted-copy {
@@ -695,6 +695,11 @@ textarea {
 .status-chip.status-warn {
   background: var(--warning-soft);
   color: var(--warning);
+}
+
+.status-chip.status-error {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .provider-summary-list,
@@ -723,7 +728,7 @@ textarea {
   font-size: 0.7rem;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   font-weight: 700;
 }
 
@@ -1160,10 +1165,43 @@ textarea {
   }
 
   .side-rail {
-    position: relative;
+    position: sticky;
+    z-index: 20;
     min-height: auto;
+    gap: 12px;
+    padding: 14px 16px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .side-brand {
+    padding-bottom: 0;
+  }
+
+  .side-group {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .side-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .side-label,
+  .side-footer {
+    display: none;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .workspace-grid,
