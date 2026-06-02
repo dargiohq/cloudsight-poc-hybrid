@@ -1932,6 +1932,14 @@ body {
   color: #1d4ed8;
 }
 
+.cloud-choice:focus-visible,
+.overview-test-card.compact:focus-visible,
+.provider-tab:focus-visible,
+.service-button:focus-visible {
+  outline: 3px solid rgba(49, 92, 255, 0.22);
+  outline-offset: 2px;
+}
+
 .popular-card,
 .selected-test-card {
   margin-top: 12px;
@@ -1955,7 +1963,7 @@ body {
   box-shadow: none;
 }
 
-.overview-test-card.compact:first-child,
+.overview-test-card.compact.active,
 .overview-test-card.compact:hover {
   border-color: #2563eb;
   background: #f8fbff;
@@ -2067,6 +2075,24 @@ body {
 
 .success-note span {
   color: #475569;
+}
+
+.success-note-idle {
+  border-color: var(--border);
+  background: #f8fafc;
+  color: #334155;
+}
+
+.success-note-running {
+  border-color: rgba(49, 92, 255, 0.24);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.success-note-warn {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .compact-table-block {
@@ -2398,9 +2424,9 @@ button.quick-card {
 }
 
 .timeline-row {
-  grid-template-columns: 30px 90px 170px minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
+  grid-template-columns: 30px minmax(150px, 0.24fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .timeline-status {
@@ -2417,13 +2443,31 @@ button.quick-card {
   background: currentColor;
 }
 
+.timeline-time {
+  min-width: 0;
+  color: #64748b;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .timeline-content {
-  display: contents;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(160px, 0.34fr) minmax(0, 1fr);
+  gap: 12px 18px;
+  align-items: start;
 }
 
 .timeline-title-row {
   display: block;
-  grid-column: 3;
+  min-width: 0;
+}
+
+.timeline-title-row strong {
+  display: block;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .timeline-title-row .status-chip,
@@ -2432,9 +2476,10 @@ button.quick-card {
 }
 
 .timeline-content p {
-  grid-column: 4;
   margin: 0;
   font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .audit-tags,
@@ -2525,9 +2570,14 @@ button.quick-card {
     grid-template-columns: 28px 80px minmax(0, 1fr);
   }
 
+  .timeline-content {
+    grid-column: 3;
+    grid-template-columns: 1fr;
+  }
+
   .timeline-title-row,
   .timeline-content p {
-    grid-column: 3;
+    grid-column: 1;
   }
 }
 

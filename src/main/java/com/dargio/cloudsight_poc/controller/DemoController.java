@@ -74,6 +74,15 @@ public class DemoController {
         return cloudSightHybridClient.runLiveProvider(provider, verify);
     }
 
+    @GetMapping("/captured-rows")
+    public Map<String, Object> capturedRows(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "") String search
+    ) {
+        return cloudSightHybridClient.capturedRows(page, size, search);
+    }
+
     @GetMapping("/audit")
     public List<Map<String, Object>> audit() {
         return cloudSightHybridClient.audit();

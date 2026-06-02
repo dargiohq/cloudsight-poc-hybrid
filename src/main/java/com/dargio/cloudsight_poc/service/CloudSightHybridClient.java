@@ -547,6 +547,55 @@ public class CloudSightHybridClient {
         );
     }
 
+    public Map<String, Object> capturedRows(int page, int size, String search) {
+        Session session = safeLogin();
+        int safePage = bounded(page, 0, 10_000);
+        int safeSize = bounded(size, 1, 100);
+
+        if (session == null || session.token() == null || session.token().isBlank()) {
+            return Map.of(
+                    "status", "ERROR",
+                    "message", "CloudSight workspace readback is temporarily unavailable.",
+                    "page", safePage,
+                    "size", safeSize,
+                    "count", 0,
+                    "rows", List.of()
+            );
+        }
+
+        StringBuilder url = new StringBuilder(baseUrl)
+                .append("/api/usage/logs?page=")
+                .append(safePage)
+                .append("&size=")
+                .append(safeSize)
+                .append("&sort=timestamp,desc");
+        if (configured(search)) {
+            url.append("&search=").append(encodeQuery(search));
+        }
+
+        try {
+            Map<String, Object> logs = getJson(url.toString(), session.token());
+            List<Map<String, Object>> rows = usageRowsFromLogs(logs);
+            return Map.of(
+                    "status", "SUCCESS",
+                    "page", safePage,
+                    "size", safeSize,
+                    "count", rows.size(),
+                    "total", logs.getOrDefault("totalElements", rows.size()),
+                    "rows", rows
+            );
+        } catch (RestClientException error) {
+            return Map.of(
+                    "status", "ERROR",
+                    "message", error.getMessage(),
+                    "page", safePage,
+                    "size", safeSize,
+                    "count", 0,
+                    "rows", List.of()
+            );
+        }
+    }
+
     public List<Map<String, Object>> audit() {
         return auditTrailService.events();
     }
@@ -1361,6 +1410,57 @@ public class CloudSightHybridClient {
             }
         }
         return normalized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> usageRowsFromLogs(Map<String, Object> payload) {
+        Object content = payload == null ? null : payload.get("content");
+        List<?> list;
+        if (content instanceof List<?> contentList) {
+            list = contentList;
+        } else {
+            Object rows = payload == null ? null : payload.get("rows");
+            if (!(rows instanceof List<?> fallbackList)) {
+                return List.of();
+            }
+            list = fallbackList;
+        }
+
+        List<Map<String, Object>> normalized = new ArrayList<>();
+        for (Object row : list) {
+            if (!(row instanceof Map<?, ?> sourceRow)) {
+                continue;
+            }
+            Map<String, Object> target = new LinkedHashMap<>((Map<String, Object>) sourceRow);
+            target.putIfAbsent("provider", inferProvider(target));
+            target.putIfAbsent("status", "Stored");
+            Object sourceReference = target.get("sourceReference");
+            if ((sourceReference == null || String.valueOf(sourceReference).isBlank()) && target.get("resourceName") != null) {
+                target.put("sourceReference", target.get("resourceName"));
+            }
+            normalized.add(target);
+        }
+        return normalized;
+    }
+
+    private String inferProvider(Map<String, Object> row) {
+        String text = String.join(" ",
+                String.valueOf(row.getOrDefault("provider", "")),
+                String.valueOf(row.getOrDefault("service", "")),
+                String.valueOf(row.getOrDefault("serviceFamily", "")),
+                String.valueOf(row.getOrDefault("inputEndpoint", "")),
+                String.valueOf(row.getOrDefault("outputEndpoint", ""))
+        ).toUpperCase(Locale.ROOT);
+        if (text.contains("AZURE") || text.contains("BLOB") || text.contains("COSMOS") || text.contains("VM")) {
+            return LIVE_AZURE_PROVIDER;
+        }
+        if (text.contains("GCP") || text.contains("CLOUD STORAGE") || text.contains("BIGQUERY") || text.contains("GEMINI") || text.contains("PUBSUB")) {
+            return LIVE_GCP_PROVIDER;
+        }
+        if (text.contains("AWS") || text.contains("S3") || text.contains("EC2") || text.contains("LAMBDA") || text.contains("DYNAMO")) {
+            return LIVE_AWS_PROVIDER;
+        }
+        return "Cloud";
     }
 
     private Object valueOrDefault(Map<?, ?> source, String key, Object fallback) {

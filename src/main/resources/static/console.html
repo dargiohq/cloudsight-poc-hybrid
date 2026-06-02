@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Collector Playground</title>
-  <link rel="stylesheet" href="./console.css?v=17">
+  <link rel="stylesheet" href="./console.css?v=18">
 </head>
 <body>
   <div class="playground-app">
@@ -93,11 +93,7 @@
               <strong>Choose a test</strong>
               <p>Pick a cloud and a test scenario to begin.</p>
             </div>
-            <div class="cloud-choice-row">
-              <button class="cloud-choice" type="button"><span class="provider-logo aws-logo">aws</span>AWS</button>
-              <button class="cloud-choice active" type="button"><span class="provider-logo gcp-logo">G</span>GCP</button>
-              <button class="cloud-choice" type="button"><span class="provider-logo azure-logo">A</span>Azure</button>
-            </div>
+            <div id="overviewCloudChoices" class="cloud-choice-row"></div>
             <div class="popular-card">
               <div class="tiny-label">Popular tests</div>
               <div id="overviewPopularTests" class="scenario-overview-list compact"></div>
@@ -111,20 +107,7 @@
               <strong>Run the proof</strong>
               <p>We call the provider, forward to the collector, and store the result.</p>
             </div>
-            <div class="selected-test-card">
-              <div class="tiny-label">Selected test</div>
-              <h3>Cloud Storage upload</h3>
-              <p>GCP</p>
-              <span class="status-chip status-ok">Live ready</span>
-              <div class="thin-divider"></div>
-              <div class="check-list">
-                <span>Call the GCP API</span>
-                <span>Send to collector</span>
-                <span>Store in CloudSight</span>
-                <span>Verify and show result</span>
-              </div>
-              <button class="toolbar-button primary full-width-button" type="button" id="quickRunDemoSet">Run live test</button>
-            </div>
+            <div id="overviewSelectedTestCard" class="selected-test-card"></div>
           </article>
 
           <article class="proof-column result-column">
@@ -133,35 +116,7 @@
               <strong>See the result</strong>
               <p>Live status, captured row, and audit trail.</p>
             </div>
-            <div class="success-note">
-              <strong>The run completed successfully.</strong>
-              <span>Live call: SUCCESS &middot; Collector: SUCCESS &middot; Verification: SUCCESS</span>
-            </div>
-            <div class="compact-table-block">
-              <div class="compact-table-head">
-                <strong>Captured row</strong>
-                <a class="inline-link compact-link" href="#captured-rows" data-nav-page="captured-rows">View in CloudSight</a>
-              </div>
-              <table class="mini-row-table">
-                <tbody>
-                  <tr><th>Time</th><td>May 21, 2025 2:41:21 PM</td></tr>
-                  <tr><th>Service</th><td>Cloud Storage (GCP)</td></tr>
-                  <tr><th>Endpoint</th><td>storage.objects.insert</td></tr>
-                  <tr><th>Bucket / Object</th><td>cs-playground-bucket / test-file-1716302981.txt</td></tr>
-                  <tr><th>Cost (est.)</th><td>$0.0004</td></tr>
-                  <tr><th>Status</th><td><span class="status-dot"></span>Stored</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="audit-preview">
-              <div class="compact-table-head">
-                <strong>Audit trail (live)</strong>
-                <a class="inline-link compact-link" href="#audit-trail" data-nav-page="audit-trail">View full audit trail</a>
-              </div>
-              <div class="audit-mini-row"><span>2:41:18 PM</span><strong>Provider call</strong><p>GCP Cloud Storage API called successfully.</p></div>
-              <div class="audit-mini-row"><span>2:41:19 PM</span><strong>Collector received</strong><p>Signal received by GCP collector.</p></div>
-              <div class="audit-mini-row"><span>2:41:20 PM</span><strong>Stored</strong><p>Row stored in CloudSight.</p></div>
-            </div>
+            <div id="overviewResultPreview"></div>
           </article>
         </section>
 
@@ -254,28 +209,29 @@
               <h2>Browse the latest stored CloudSight rows</h2>
               <p class="card-copy">Browse and search rows captured by the collector and normalized by CloudSight.</p>
             </div>
-            <button class="toolbar-button secondary" type="button">Export CSV</button>
+            <button id="exportCapturedRows" class="toolbar-button secondary" type="button">Export CSV</button>
           </div>
           <div class="table-toolbar">
-            <select class="table-filter">
+            <select id="capturedCloudFilter" class="table-filter">
               <option>All clouds</option>
               <option>AWS</option>
               <option>GCP</option>
               <option>Azure</option>
             </select>
-            <select class="table-filter">
+            <select id="capturedServiceFilter" class="table-filter">
               <option>All services</option>
               <option>Cloud Storage</option>
+              <option>S3</option>
               <option>EC2</option>
               <option>Blob Storage</option>
             </select>
-            <select class="table-filter">
+            <select id="capturedRangeFilter" class="table-filter">
               <option>Last 7 days</option>
               <option>Last 24 hours</option>
               <option>Last 30 days</option>
             </select>
-            <input class="table-search" type="text" placeholder="Search by service, endpoint, bucket..." />
-            <button class="toolbar-button secondary" type="button">Filters</button>
+            <input id="capturedSearch" class="table-search" type="text" placeholder="Search by service, endpoint, bucket..." />
+            <button id="applyCapturedFilters" class="toolbar-button secondary" type="button">Filters</button>
           </div>
 
           <div id="usageTableMeta" class="table-meta">Run a test to see the latest matching CloudSight rows.</div>
@@ -524,6 +480,6 @@
     </main>
   </div>
 
-  <script src="./console.js?v=17" defer></script>
+  <script src="./console.js?v=18" defer></script>
 </body>
 </html>

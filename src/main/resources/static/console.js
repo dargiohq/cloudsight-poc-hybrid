@@ -23,7 +23,10 @@ const usageTableBody = document.getElementById("usageTableBody");
 const runStatusBanner = document.getElementById("runStatusBanner");
 const providerDirectoryOverview = document.getElementById("providerDirectoryOverview");
 const providerDirectoryPage = document.getElementById("providerDirectoryPage");
+const overviewCloudChoices = document.getElementById("overviewCloudChoices");
 const overviewPopularTests = document.getElementById("overviewPopularTests");
+const overviewSelectedTestCard = document.getElementById("overviewSelectedTestCard");
+const overviewResultPreview = document.getElementById("overviewResultPreview");
 const apiExplorerRequest = document.getElementById("apiExplorerRequest");
 const apiExplorerResponse = document.getElementById("apiExplorerResponse");
 const apiExplorerStatus = document.getElementById("apiExplorerStatus");
@@ -31,6 +34,12 @@ const apiExplorerLatency = document.getElementById("apiExplorerLatency");
 const quickRunDemoSet = document.getElementById("quickRunDemoSet");
 const quickRunDemoSetSecondary = document.getElementById("quickRunDemoSetSecondary");
 const overviewRunDemoSet = document.getElementById("overviewRunDemoSet");
+const capturedCloudFilter = document.getElementById("capturedCloudFilter");
+const capturedServiceFilter = document.getElementById("capturedServiceFilter");
+const capturedRangeFilter = document.getElementById("capturedRangeFilter");
+const capturedSearch = document.getElementById("capturedSearch");
+const applyCapturedFilters = document.getElementById("applyCapturedFilters");
+const exportCapturedRows = document.getElementById("exportCapturedRows");
 const pageSections = Array.from(document.querySelectorAll(".workspace-page"));
 const navPageLinks = Array.from(document.querySelectorAll("[data-nav-page]"));
 const IS_LOCAL_PREVIEW =
@@ -56,7 +65,19 @@ const state = {
   selectedProvider: null,
   selectedScenarioId: null,
   lastRun: null,
+  lastRunScenarioId: null,
+  lastRunProvider: null,
   auditEvents: [],
+  capturedRows: [],
+  capturedRowsLoaded: false,
+  capturedRowsLoading: false,
+  capturedRowsError: "",
+  capturedFilters: {
+    cloud: "All clouds",
+    service: "All services",
+    range: "Last 7 days",
+    search: ""
+  },
   loadingScenarioId: null,
   runningAll: false,
   activePage: PAGE_IDS.has(window.location.hash.replace("#", "")) ? window.location.hash.replace("#", "") : "overview"
@@ -324,12 +345,35 @@ if (overviewRunDemoSet) {
   overviewRunDemoSet.addEventListener("click", () => runRealtime());
 }
 if (quickRunDemoSet) {
-  quickRunDemoSet.addEventListener("click", () => runRealtime());
+  quickRunDemoSet.addEventListener("click", () => runSelected({ keepPage: true }));
 }
 if (quickRunDemoSetSecondary) {
   quickRunDemoSetSecondary.addEventListener("click", () => runRealtime());
 }
 runSelectedScenario.addEventListener("click", () => runSelected());
+if (capturedCloudFilter) {
+  capturedCloudFilter.addEventListener("change", () => updateCapturedFilters());
+}
+if (capturedServiceFilter) {
+  capturedServiceFilter.addEventListener("change", () => updateCapturedFilters());
+}
+if (capturedRangeFilter) {
+  capturedRangeFilter.addEventListener("change", () => updateCapturedFilters());
+}
+if (capturedSearch) {
+  capturedSearch.addEventListener("input", () => updateCapturedFilters({ deferRemoteRefresh: true }));
+  capturedSearch.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      updateCapturedFilters();
+    }
+  });
+}
+if (applyCapturedFilters) {
+  applyCapturedFilters.addEventListener("click", () => updateCapturedFilters());
+}
+if (exportCapturedRows) {
+  exportCapturedRows.addEventListener("click", () => exportVisibleCapturedRows());
+}
 
 async function json(url, options) {
   if (IS_LOCAL_PREVIEW) {
@@ -433,6 +477,10 @@ function setActivePage(nextPage, options = {}) {
   if (!options.skipScroll) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  if (nextPage === "captured-rows") {
+    loadCapturedRows();
+  }
 }
 
 function bindPageNavigation() {
@@ -520,6 +568,80 @@ function statusLabel(configured, selectedService) {
   return configured ? `Live ready: ${selectedService}` : "Collector-ready only";
 }
 
+function findScenarioModel(scenarioId) {
+  return state.models.find((model) =>
+    [model.liveScenario, ...model.serviceScenarios]
+      .filter(Boolean)
+      .some((scenario) => scenario.id === scenarioId)
+  ) || null;
+}
+
+function scenariosForModel(model) {
+  return [model?.liveScenario, ...(model?.serviceScenarios || [])].filter(Boolean);
+}
+
+function selectProvider(provider, options = {}) {
+  if (!state.models.some((model) => model.provider === provider)) {
+    return;
+  }
+  state.selectedProvider = provider;
+  const model = getSelectedModel();
+  const currentIsValid = scenariosForModel(model).some((scenario) => scenario.id === state.selectedScenarioId);
+  if (!currentIsValid || options.preferLive) {
+    state.selectedScenarioId = model?.liveScenario?.id || model?.serviceScenarios?.[0]?.id || null;
+  }
+  syncScenarioSurfaces({ resetBanner: options.resetBanner !== false });
+}
+
+function selectScenario(scenarioId, options = {}) {
+  const model = findScenarioModel(scenarioId);
+  if (!model) {
+    return;
+  }
+  state.selectedProvider = model.provider;
+  state.selectedScenarioId = scenarioId;
+  syncScenarioSurfaces({ resetBanner: options.resetBanner !== false });
+}
+
+function resultScenarioId(result) {
+  return result?.scenario?.id || state.lastRunScenarioId || null;
+}
+
+function resultProvider(result) {
+  return result?.scenario?.provider || result?.provider || state.lastRunProvider || null;
+}
+
+function currentScenarioResult(scenario = getSelectedScenario()) {
+  if (!state.lastRun || !scenario) {
+    return null;
+  }
+  const runScenarioId = resultScenarioId(state.lastRun);
+  const runProvider = resultProvider(state.lastRun);
+  if (runScenarioId && runScenarioId !== scenario.id) {
+    return null;
+  }
+  if (runProvider && runProvider !== scenario.provider) {
+    return null;
+  }
+  return state.lastRun;
+}
+
+function rememberRun(result, scenario) {
+  state.lastRun = result;
+  state.lastRunScenarioId = result?.scenario?.id || scenario?.id || null;
+  state.lastRunProvider = result?.scenario?.provider || scenario?.provider || result?.provider || null;
+}
+
+function syncScenarioSurfaces(options = {}) {
+  renderOverviewCloudChoices();
+  renderOverviewPopularTests();
+  renderOverviewSelectedProof();
+  renderOverviewResultPreview();
+  renderProviderTabs();
+  renderSelectedProvider();
+  renderSelectedScenario(options);
+}
+
 function renderProviderTabs() {
   providerTabs.innerHTML = state.models.map((model) => `
     <button class="provider-tab ${model.provider === state.selectedProvider ? "active" : ""}" data-provider-tab="${model.provider}">
@@ -530,11 +652,7 @@ function renderProviderTabs() {
 
   providerTabs.querySelectorAll("[data-provider-tab]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.selectedProvider = button.dataset.providerTab;
-      const model = getSelectedModel();
-      state.selectedScenarioId = model?.liveScenario?.id || model?.serviceScenarios?.[0]?.id || null;
-      renderSelectedProvider();
-      renderSelectedScenario();
+      selectProvider(button.dataset.providerTab, { preferLive: true });
     });
   });
 }
@@ -594,14 +712,12 @@ function renderSelectedProvider() {
 
   scenarioList.querySelectorAll("[data-scenario-select]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.selectedScenarioId = button.dataset.scenarioSelect;
-      renderSelectedProvider();
-      renderSelectedScenario();
+      selectScenario(button.dataset.scenarioSelect);
     });
   });
 }
 
-function renderSelectedScenario() {
+function renderSelectedScenario(options = {}) {
   const scenario = getSelectedScenario();
   const model = getSelectedModel();
   if (!scenario || !model) {
@@ -626,16 +742,33 @@ function renderSelectedScenario() {
       ? (model.setup.configured ? "Run live + verify" : "Configure live credentials")
       : "Run collector test";
 
-  renderFlowExplanation(scenario, null);
-  renderApiExplorer(null, scenario);
+  const matchedResult = currentScenarioResult(scenario);
+  renderFlowExplanation(scenario, matchedResult);
+  renderResultSummary(matchedResult, scenario);
+  renderResultNarrative(matchedResult, scenario);
+  renderUsageTable(matchedResult, scenario);
+  renderRunReadback(matchedResult, scenario);
+  renderApiExplorer(matchedResult, scenario);
+  if (resultPanel) {
+    resultPanel.textContent = matchedResult
+      ? JSON.stringify(matchedResult, null, 2)
+      : "Run a proof to inspect the latest collector result.";
+  }
+  if (!matchedResult && !isRunning && !state.runningAll && options.resetBanner !== false) {
+    setBanner(
+      `Ready to run ${providerLabel(scenario.provider)} ${scenario.serviceFamily}.`,
+      "idle"
+    );
+  }
 }
 
 function buildFlowItems(scenario, result) {
-  const provider = scenario.provider;
+  const provider = providerLabel(scenario.provider);
   const isLive = scenario.executionMode === "live-provider-call";
   const liveCall = result?.liveCall;
   const dispatch = result?.dispatch;
   const verification = result?.verification;
+  const storedCount = dispatch?.result?.stored || dispatch?.result?.response?.stored;
 
   const steps = [
     {
@@ -652,8 +785,8 @@ function buildFlowItems(scenario, result) {
     },
     {
       title: "CloudSight ingestion",
-      body: dispatch?.result?.stored
-        ? `CloudSight accepted ${dispatch.result.stored} event(s) and stored the normalized usage row.`
+      body: storedCount
+        ? `CloudSight accepted ${storedCount} event(s) and stored the normalized usage row.`
         : `CloudSight will store the matching usage row once the collector dispatch completes.`
     },
     {
@@ -684,7 +817,7 @@ function renderFlowExplanation(scenario, result) {
 function renderResultSummary(result, scenario) {
   if (!result) {
     resultSummary.innerHTML = `
-      <span class="pill">${escapeHtml(scenario.provider)}</span>
+      <span class="pill">${escapeHtml(providerLabel(scenario.provider))}</span>
       <span class="pill">${escapeHtml(scenario.serviceFamily)}</span>
       <span class="pill">${escapeHtml(scenario.executionMode)}</span>
     `;
@@ -695,7 +828,7 @@ function renderResultSummary(result, scenario) {
   const verification = result.verification || {};
   const liveCall = result.liveCall || {};
   const chips = [
-    scenario.provider,
+    providerLabel(scenario.provider),
     scenario.serviceFamily,
     dispatch.status || result.status || "PENDING",
     verification.status || "SKIPPED"
@@ -720,7 +853,7 @@ function renderResultNarrative(result, scenario) {
     resultNarrative.innerHTML = `
       <div class="narrative-card">
         <strong>Ready to run</strong>
-        <p>Use the button above to send the selected ${escapeHtml(scenario.serviceFamily)} proof through the ${escapeHtml(scenario.provider)} flow.</p>
+        <p>Use the button above to send the selected ${escapeHtml(scenario.serviceFamily)} proof through the ${escapeHtml(providerLabel(scenario.provider))} flow.</p>
       </div>
     `;
     return;
@@ -785,10 +918,36 @@ function rowsFromDispatch(result, scenario) {
   }));
 }
 
+function rowsForResult(result, scenario) {
+  const matched = result?.verification?.matchedLogs;
+  const readbackRows = Array.isArray(matched)
+    ? matched
+    : result?.verification?.latestLog && Object.keys(result.verification.latestLog).length
+      ? [result.verification.latestLog]
+      : [];
+  const dispatchRows = rowsFromDispatch(result, scenario);
+  return readbackRows.length ? readbackRows : dispatchRows;
+}
+
+function inferredProviderFromRow(row, scenario = {}) {
+  const provider = row.provider || row.cloud || row.serviceProvider || row.sourceProvider || scenario.provider || "";
+  const text = `${provider} ${row.service || ""} ${row.serviceFamily || ""} ${row.inputEndpoint || ""} ${row.outputEndpoint || ""}`.toUpperCase();
+  if (text.includes("AZURE") || text.includes("BLOB") || text.includes("VM") || text.includes("COSMOS")) {
+    return "AZURE";
+  }
+  if (text.includes("GCP") || text.includes("CLOUD STORAGE") || text.includes("BIGQUERY") || text.includes("GEMINI") || text.includes("PUBSUB")) {
+    return "GCP";
+  }
+  if (text.includes("AWS") || text.includes("S3") || text.includes("EC2") || text.includes("LAMBDA") || text.includes("DYNAMO")) {
+    return "AWS";
+  }
+  return provider || "Cloud";
+}
+
 function localPreviewRows(rows) {
   return (rows || []).map((row) => ({
     ...row,
-    provider: row.provider || (/EC2|S3/i.test(row.service || "") ? "AWS" : /Blob|Azure/i.test(row.service || "") ? "Azure" : "GCP"),
+    provider: row.provider || inferredProviderFromRow(row),
     status: row.status || "Stored"
   }));
 }
@@ -804,6 +963,11 @@ function statusTone(status) {
 }
 
 function renderUsageTable(result, scenario) {
+  if (state.activePage === "captured-rows") {
+    renderCapturedRowsTable();
+    return;
+  }
+
   const matched = result?.verification?.matchedLogs;
   const readbackRows = Array.isArray(matched)
     ? matched
@@ -830,7 +994,7 @@ function renderUsageTable(result, scenario) {
       : `No captured usage rows are available yet for ${scenario?.primaryEndpoint || "this test"}.`;
     usageTableBody.innerHTML = `
       <tr>
-        <td colspan="7" class="empty-table">Run a test and this table will highlight the latest CloudSight rows for the selected endpoint.</td>
+        <td colspan="8" class="empty-table">Run a test and this table will highlight the latest CloudSight rows for the selected endpoint.</td>
       </tr>
     `;
     return;
@@ -850,7 +1014,7 @@ function renderUsageTable(result, scenario) {
     const units = `${formatCount(row.inputUnits || row.primaryUnits || 0)} / ${formatCount(row.outputUnits || row.secondaryUnits || 0)}`;
     const cost = row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—";
     const when = row.timestamp || row.createdAt || row.recordedAt || "—";
-    const provider = row.provider || scenario.provider || "Cloud";
+    const provider = inferredProviderFromRow(row, scenario);
     const status = row.status || row.dispatchStatus || "Stored";
     const statusClass = /ERROR|FAIL/i.test(status) ? "status-error" : /WARN|PENDING|RATE/i.test(status) ? "status-warn" : "status-ok";
     return `
@@ -866,6 +1030,231 @@ function renderUsageTable(result, scenario) {
       </tr>
     `;
   }).join("");
+}
+
+function normalizeCapturedRows(rows) {
+  return (rows || []).map((row) => ({
+    ...row,
+    provider: providerLabel(inferredProviderFromRow(row)),
+    status: row.status || row.dispatchStatus || row.ingestionStatus || "Stored"
+  }));
+}
+
+function syncCapturedFilterControls() {
+  if (capturedCloudFilter) capturedCloudFilter.value = state.capturedFilters.cloud;
+  if (capturedServiceFilter) capturedServiceFilter.value = state.capturedFilters.service;
+  if (capturedRangeFilter) capturedRangeFilter.value = state.capturedFilters.range;
+  if (capturedSearch && capturedSearch.value !== state.capturedFilters.search) {
+    capturedSearch.value = state.capturedFilters.search;
+  }
+}
+
+function updateCapturedFilters(options = {}) {
+  state.capturedFilters = {
+    cloud: capturedCloudFilter?.value || "All clouds",
+    service: capturedServiceFilter?.value || "All services",
+    range: capturedRangeFilter?.value || "Last 7 days",
+    search: capturedSearch?.value || ""
+  };
+  renderCapturedRowsTable();
+  if (!options.deferRemoteRefresh && state.activePage === "captured-rows") {
+    loadCapturedRows({ force: true });
+  }
+}
+
+async function loadCapturedRows(options = {}) {
+  if (state.capturedRowsLoading) {
+    return;
+  }
+  if (state.capturedRowsLoaded && !options.force) {
+    renderCapturedRowsTable();
+    return;
+  }
+
+  state.capturedRowsLoading = true;
+  state.capturedRowsError = "";
+  renderCapturedRowsTable();
+
+  try {
+    if (IS_LOCAL_PREVIEW) {
+      state.capturedRows = normalizeCapturedRows(LOCAL_PREVIEW_DATA.capturedRows.rows);
+    } else {
+      const searchQuery = state.capturedFilters.search.trim();
+      const query = new URLSearchParams({
+        page: "0",
+        size: "50"
+      });
+      if (searchQuery) {
+        query.set("search", searchQuery);
+      }
+      const payload = await json(`/demo/captured-rows?${query.toString()}`);
+      state.capturedRows = normalizeCapturedRows(payload.rows || []);
+    }
+    state.capturedRowsLoaded = true;
+  } catch (error) {
+    const fallbackRows = rowsForResult(state.lastRun, getSelectedScenario());
+    state.capturedRows = normalizeCapturedRows(fallbackRows);
+    state.capturedRowsLoaded = Boolean(fallbackRows.length);
+    state.capturedRowsError = error.message || String(error);
+  } finally {
+    state.capturedRowsLoading = false;
+    renderCapturedRowsTable();
+  }
+}
+
+function parseRowTime(row) {
+  const raw = row.timestamp || row.createdAt || row.recordedAt || row.time;
+  const parsed = Date.parse(raw || "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function daysForRange(range) {
+  if (/24/.test(range || "")) {
+    return 1;
+  }
+  if (/30/.test(range || "")) {
+    return 30;
+  }
+  return 7;
+}
+
+function rowSearchText(row) {
+  return [
+    row.provider,
+    row.cloud,
+    row.service,
+    row.serviceFamily,
+    row.inputEndpoint,
+    row.outputEndpoint,
+    row.primaryEndpoint,
+    row.secondaryEndpoint,
+    row.bucket,
+    row.bucketObject,
+    row.objectName,
+    row.resourceName,
+    row.sourceReference,
+    row.collectorName,
+    row.status
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function filteredCapturedRows() {
+  const filters = state.capturedFilters;
+  const cloud = (filters.cloud || "").toUpperCase();
+  const service = (filters.service || "").toLowerCase();
+  const search = (filters.search || "").trim().toLowerCase();
+  const rangeDays = daysForRange(filters.range);
+  const rangeStart = Date.now() - rangeDays * 24 * 60 * 60 * 1000;
+
+  return normalizeCapturedRows(state.capturedRows).filter((row) => {
+    const provider = inferredProviderFromRow(row).toUpperCase();
+    if (cloud !== "ALL CLOUDS" && cloud !== provider) {
+      return false;
+    }
+    if (service !== "all services" && !rowSearchText(row).includes(service)) {
+      return false;
+    }
+    if (search && !rowSearchText(row).includes(search)) {
+      return false;
+    }
+    if (!IS_LOCAL_PREVIEW) {
+      const timestamp = parseRowTime(row);
+      if (timestamp && timestamp < rangeStart) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+function renderCapturedRowsTable() {
+  syncCapturedFilterControls();
+  if (!usageTableBody || !usageTableMeta) {
+    return;
+  }
+
+  if (!state.capturedRowsLoaded && !state.capturedRowsLoading && IS_LOCAL_PREVIEW) {
+    state.capturedRows = normalizeCapturedRows(LOCAL_PREVIEW_DATA.capturedRows.rows);
+    state.capturedRowsLoaded = true;
+  }
+
+  const rows = filteredCapturedRows();
+  if (state.capturedRowsLoading) {
+    usageTableMeta.textContent = "Loading the latest stored CloudSight rows...";
+  } else if (state.capturedRowsError && !rows.length) {
+    usageTableMeta.textContent = `CloudSight rows are temporarily unavailable. ${state.capturedRowsError}`;
+  } else if (state.capturedRowsError) {
+    usageTableMeta.textContent = `Showing fallback rows from the latest run. CloudSight refresh error: ${state.capturedRowsError}`;
+  } else {
+    usageTableMeta.textContent = `Showing ${rows.length} of ${state.capturedRows.length} latest stored row${state.capturedRows.length === 1 ? "" : "s"}.`;
+  }
+
+  if (!rows.length) {
+    usageTableBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="empty-table">No captured rows match the current filters. Run a proof or broaden the filter selection.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  usageTableBody.innerHTML = rows.map((row, index) => {
+    const primary = row.inputEndpoint || row.primaryEndpoint || "—";
+    const objectName = row.objectName || row.bucketObject || row.bucket || row.resourceName || row.sourceReference || row.outputEndpoint || row.secondaryEndpoint || "—";
+    const units = `${formatCount(row.inputUnits || row.primaryUnits || 0)} / ${formatCount(row.outputUnits || row.secondaryUnits || 0)}`;
+    const cost = row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—";
+    const when = row.timestamp || row.createdAt || row.recordedAt || "—";
+    const provider = providerLabel(inferredProviderFromRow(row));
+    const status = row.status || row.dispatchStatus || "Stored";
+    const statusClass = /ERROR|FAIL/i.test(status) ? "status-error" : /WARN|PENDING|RATE/i.test(status) ? "status-warn" : "status-ok";
+    return `
+      <tr class="${index === 0 ? "usage-row-highlight" : ""}">
+        <td>${escapeHtml(when)}</td>
+        <td><span class="cloud-cell">${escapeHtml(provider)}</span></td>
+        <td>${escapeHtml(row.service || row.serviceFamily || provider)}</td>
+        <td><strong>${escapeHtml(primary)}</strong></td>
+        <td><span class="usage-secondary">${escapeHtml(objectName)}</span></td>
+        <td><span class="status-chip ${statusClass}">${escapeHtml(status)}</span></td>
+        <td>${escapeHtml(units)}</td>
+        <td>${escapeHtml(String(cost))}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function csvValue(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
+function exportVisibleCapturedRows() {
+  const rows = filteredCapturedRows();
+  const headers = ["Time", "Cloud", "Service", "Endpoint", "Bucket / Object", "Status", "Units", "Cost"];
+  const lines = [
+    headers.map(csvValue).join(","),
+    ...rows.map((row) => {
+      const provider = providerLabel(inferredProviderFromRow(row));
+      const units = `${formatCount(row.inputUnits || row.primaryUnits || 0)} / ${formatCount(row.outputUnits || row.secondaryUnits || 0)}`;
+      return [
+        row.timestamp || row.createdAt || row.recordedAt || "",
+        provider,
+        row.service || row.serviceFamily || provider,
+        row.inputEndpoint || row.primaryEndpoint || "",
+        row.objectName || row.bucketObject || row.bucket || row.resourceName || row.sourceReference || "",
+        row.status || row.dispatchStatus || "Stored",
+        units,
+        row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? ""
+      ].map(csvValue).join(",");
+    })
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "cloudsight-captured-rows.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function providerTone(model) {
@@ -977,32 +1366,54 @@ function renderProviderDirectory() {
   `;
 }
 
+function renderOverviewCloudChoices() {
+  if (!overviewCloudChoices) {
+    return;
+  }
+
+  overviewCloudChoices.innerHTML = state.models.map((model) => `
+    <button
+      class="cloud-choice ${model.provider === state.selectedProvider ? "active" : ""}"
+      type="button"
+      data-overview-provider="${model.provider}"
+    >
+      ${providerLogoMarkup(model.provider)}${escapeHtml(providerLabel(model.provider))}
+    </button>
+  `).join("");
+
+  overviewCloudChoices.querySelectorAll("[data-overview-provider]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectProvider(button.dataset.overviewProvider, { preferLive: true });
+    });
+  });
+}
+
 function renderOverviewPopularTests() {
   if (!overviewPopularTests) {
     return;
   }
 
-  const items = state.models
-    .flatMap((model) => [model.liveScenario, ...model.serviceScenarios].filter(Boolean).map((scenario) => ({
+  const model = getSelectedModel();
+  if (!model) {
+    overviewPopularTests.innerHTML = "";
+    return;
+  }
+
+  const items = scenariosForModel(model)
+    .map((scenario) => ({
       provider: model.provider,
       configured: Boolean(model.setup?.configured),
       scenario
-    })))
+    }))
     .sort((left, right) => {
-      const preferredOrder = ["gcp-storage-live", "aws-ec2", "azure-blob-live", "gcp-bigquery"];
-      const leftPreferred = preferredOrder.indexOf(left.scenario.id);
-      const rightPreferred = preferredOrder.indexOf(right.scenario.id);
-      if (leftPreferred !== -1 || rightPreferred !== -1) {
-        return (leftPreferred === -1 ? 99 : leftPreferred) - (rightPreferred === -1 ? 99 : rightPreferred);
-      }
       const leftScore = left.scenario.executionMode === "live-provider-call" ? 0 : 1;
       const rightScore = right.scenario.executionMode === "live-provider-call" ? 0 : 1;
-      return leftScore - rightScore;
+      return leftScore - rightScore || left.scenario.serviceFamily.localeCompare(right.scenario.serviceFamily);
     })
     .slice(0, 4);
 
   overviewPopularTests.innerHTML = items.map((item) => `
-    <button class="overview-test-card compact" data-overview-scenario="${item.scenario.id}">
+    <button class="overview-test-card compact ${item.scenario.id === state.selectedScenarioId ? "active" : ""}" data-overview-scenario="${item.scenario.id}">
       <div class="overview-test-topline">
         <strong>${providerLogoMarkup(item.provider)}${escapeHtml(item.scenario.title)}</strong>
         <span class="pill ${item.scenario.executionMode === "live-provider-call" && item.configured ? "pill-ok" : ""}">
@@ -1018,19 +1429,178 @@ function renderOverviewPopularTests() {
 
   overviewPopularTests.querySelectorAll("[data-overview-scenario]").forEach((button) => {
     button.addEventListener("click", () => {
-      const scenarioId = button.dataset.overviewScenario;
-      const nextModel = state.models.find((model) => [model.liveScenario, ...model.serviceScenarios].filter(Boolean).some((scenario) => scenario.id === scenarioId));
-      if (!nextModel) {
-        return;
-      }
-      state.selectedProvider = nextModel.provider;
-      state.selectedScenarioId = scenarioId;
-      renderProviderTabs();
-      renderSelectedProvider();
-      renderSelectedScenario();
-      setActivePage("live-test");
+      selectScenario(button.dataset.overviewScenario);
     });
   });
+}
+
+function renderOverviewSelectedProof() {
+  if (!overviewSelectedTestCard) {
+    return;
+  }
+
+  const scenario = getSelectedScenario();
+  const model = getSelectedModel();
+  if (!scenario || !model) {
+    overviewSelectedTestCard.innerHTML = "";
+    return;
+  }
+
+  const isRunning = state.loadingScenarioId === scenario.id;
+  const disabled = isRunning || (scenario.executionMode === "live-provider-call" && !model.setup?.configured);
+  overviewSelectedTestCard.innerHTML = `
+    <div class="tiny-label">Selected test</div>
+    <h3>${escapeHtml(scenario.title)}</h3>
+    <p>${escapeHtml(providerLabel(scenario.provider))} · ${escapeHtml(scenario.serviceFamily)}</p>
+    <span class="status-chip ${model.setup?.configured ? "status-ok" : "status-warn"}">
+      ${escapeHtml(scenario.executionMode === "live-provider-call" && model.setup?.configured ? "Live ready" : scenario.executionMode === "live-provider-call" ? "Needs credentials" : "Collector ready")}
+    </span>
+    <div class="thin-divider"></div>
+    <div class="check-list">
+      <span>${escapeHtml(scenario.executionMode === "live-provider-call" ? `Call the ${providerLabel(scenario.provider)} API` : "Generate collector payload")}</span>
+      <span>Send to collector</span>
+      <span>Store in CloudSight</span>
+      <span>Verify and show result</span>
+    </div>
+    <button
+      class="toolbar-button primary full-width-button"
+      type="button"
+      data-overview-run-selected
+      ${disabled ? "disabled" : ""}
+    >
+      ${escapeHtml(isRunning ? "Running proof..." : scenario.executionMode === "live-provider-call" ? "Run live test" : "Run collector test")}
+    </button>
+  `;
+
+  const runButton = overviewSelectedTestCard.querySelector("[data-overview-run-selected]");
+  if (runButton) {
+    runButton.addEventListener("click", () => runSelected({ keepPage: true }));
+  }
+}
+
+function overviewRowValue(row, scenario, key) {
+  if (key === "time") {
+    return row.timestamp || row.createdAt || row.recordedAt || "—";
+  }
+  if (key === "service") {
+    return row.service || row.serviceFamily || scenario.serviceFamily || scenario.provider || "—";
+  }
+  if (key === "endpoint") {
+    return row.inputEndpoint || row.primaryEndpoint || scenario.primaryEndpoint || "—";
+  }
+  if (key === "object") {
+    return row.objectName || row.bucketObject || row.bucket || row.resourceName || row.sourceReference || row.outputEndpoint || "—";
+  }
+  if (key === "cost") {
+    return row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—";
+  }
+  return row.status || row.dispatchStatus || "Stored";
+}
+
+function renderOverviewResultPreview() {
+  if (!overviewResultPreview) {
+    return;
+  }
+
+  const scenario = getSelectedScenario();
+  if (!scenario) {
+    overviewResultPreview.innerHTML = "";
+    return;
+  }
+
+  const isRunning = state.loadingScenarioId === scenario.id;
+  const result = currentScenarioResult(scenario);
+
+  if (!result && !isRunning) {
+    overviewResultPreview.innerHTML = `
+      <div class="success-note success-note-idle">
+        <strong>Ready to run.</strong>
+        <span>Select a proof and run it to see the captured row and audit trail here.</span>
+      </div>
+      <div class="compact-table-block">
+        <div class="compact-table-head">
+          <strong>Selected proof</strong>
+          <a class="inline-link compact-link" href="#live-test" data-nav-page="live-test">Open live test</a>
+        </div>
+        <table class="mini-row-table">
+          <tbody>
+            <tr><th>Cloud</th><td>${escapeHtml(providerLabel(scenario.provider))}</td></tr>
+            <tr><th>Service</th><td>${escapeHtml(scenario.serviceFamily)}</td></tr>
+            <tr><th>Endpoint</th><td>${escapeHtml(scenario.primaryEndpoint)}</td></tr>
+            <tr><th>Mode</th><td>${escapeHtml(scenario.executionMode)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+    return;
+  }
+
+  if (!result && isRunning) {
+    overviewResultPreview.innerHTML = `
+      <div class="success-note success-note-running">
+        <strong>Running ${escapeHtml(providerLabel(scenario.provider))} proof...</strong>
+        <span>The provider call, collector dispatch, and CloudSight readback are in progress.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const liveStatus = result.liveCall?.status || (scenario.executionMode === "live-provider-call" ? "PENDING" : "SKIPPED");
+  const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
+  const verificationStatus = result.verification?.status || "SKIPPED";
+  const isSuccess = dispatchStatus === "SUCCESS" && !/ERROR|FAIL/i.test(liveStatus);
+  const rows = rowsForResult(result, scenario);
+  const row = rows[0] || {};
+  const runEvents = (state.auditEvents || []).filter((event) => event.runId && event.runId === result.runId).slice(0, 3);
+  const auditRows = runEvents.length
+    ? runEvents.map((event) => ({
+      time: event.recordedAt || "—",
+      title: auditStage(event),
+      detail: event.primaryEndpoint
+        ? `${providerLabel(event.provider || scenario.provider)} ${event.primaryEndpoint} completed.`
+        : event.url || "CloudSight event recorded."
+    }))
+    : buildFlowItems(scenario, result).slice(0, 3).map((item) => ({
+      time: "now",
+      title: item.title,
+      detail: item.body
+    }));
+
+  overviewResultPreview.innerHTML = `
+    <div class="success-note ${isSuccess ? "" : "success-note-warn"}">
+      <strong>${escapeHtml(isSuccess ? "The run completed successfully." : "The run needs attention.")}</strong>
+      <span>Live call: ${escapeHtml(liveStatus)} · Collector: ${escapeHtml(dispatchStatus)} · Verification: ${escapeHtml(verificationStatus)}</span>
+    </div>
+    <div class="compact-table-block">
+      <div class="compact-table-head">
+        <strong>Captured row</strong>
+        <a class="inline-link compact-link" href="#captured-rows" data-nav-page="captured-rows">View in CloudSight</a>
+      </div>
+      <table class="mini-row-table">
+        <tbody>
+          <tr><th>Time</th><td>${escapeHtml(overviewRowValue(row, scenario, "time"))}</td></tr>
+          <tr><th>Service</th><td>${escapeHtml(overviewRowValue(row, scenario, "service"))}</td></tr>
+          <tr><th>Endpoint</th><td>${escapeHtml(overviewRowValue(row, scenario, "endpoint"))}</td></tr>
+          <tr><th>Bucket / Object</th><td>${escapeHtml(overviewRowValue(row, scenario, "object"))}</td></tr>
+          <tr><th>Cost (est.)</th><td>${escapeHtml(String(overviewRowValue(row, scenario, "cost")))}</td></tr>
+          <tr><th>Status</th><td><span class="status-dot"></span>${escapeHtml(overviewRowValue(row, scenario, "status"))}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="audit-preview">
+      <div class="compact-table-head">
+        <strong>Audit trail (live)</strong>
+        <a class="inline-link compact-link" href="#audit-trail" data-nav-page="audit-trail">View full audit trail</a>
+      </div>
+      ${auditRows.map((event) => `
+        <div class="audit-mini-row">
+          <span>${escapeHtml(event.time)}</span>
+          <strong>${escapeHtml(event.title)}</strong>
+          <p>${escapeHtml(event.detail)}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 function sampleRequestContract(scenario) {
@@ -1094,11 +1664,15 @@ function renderApiExplorer(result, scenario) {
     data: [
       {
         id: result.runId,
-        cloud: scenario.provider,
+        cloud: providerLabel(scenario.provider),
         service: scenario.serviceFamily,
         endpoint: scenario.primaryEndpoint,
         status: result.verification?.status || result.dispatch?.status || result.status || "UNKNOWN",
-        cost: result.dispatch?.result?.response?.estimatedCost || result.dispatch?.result?.response?.cost || "0.0004",
+        cost: result.verification?.latestLog?.calculatedCost
+          || rowsForResult(result, scenario)[0]?.calculatedCost
+          || result.dispatch?.result?.response?.estimatedCost
+          || result.dispatch?.result?.response?.cost
+          || "0.0004",
         timestamp: result.verification?.latestLog?.timestamp || "2025-05-21T10:41:21.121Z"
       }
     ],
@@ -1199,20 +1773,21 @@ function setBanner(text, tone = "idle") {
   runStatusBanner.textContent = text;
 }
 
-async function runSelected() {
+async function runSelected(options = {}) {
   const scenario = getSelectedScenario();
   if (!scenario) {
     return;
   }
 
   state.loadingScenarioId = scenario.id;
-  setActivePage("live-test", { skipScroll: true });
-  renderSelectedProvider();
-  renderSelectedScenario();
+  if (!options.keepPage) {
+    setActivePage("live-test", { skipScroll: true });
+  }
+  syncScenarioSurfaces({ resetBanner: false });
   setBanner(
     scenario.executionMode === "live-provider-call"
-      ? `Running a real ${scenario.provider} provider call and forwarding the collector payload…`
-      : `Running the ${scenario.provider} collector replay for ${scenario.serviceFamily}…`,
+      ? `Running a real ${providerLabel(scenario.provider)} provider call and forwarding the collector payload…`
+      : `Running the ${providerLabel(scenario.provider)} collector replay for ${scenario.serviceFamily}…`,
     "running"
   );
 
@@ -1221,7 +1796,7 @@ async function runSelected() {
       ? await json(`/demo/live/providers/${scenario.provider}/run?verify=true`, { method: "POST" })
       : await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" });
 
-    state.lastRun = result;
+    rememberRun(result, scenario);
     renderFlowExplanation(scenario, result);
     renderResultSummary(result, scenario);
     renderResultNarrative(result, scenario);
@@ -1230,6 +1805,10 @@ async function runSelected() {
     renderRunReadback(result, scenario);
     renderApiExplorer(result, scenario);
     await loadAudit();
+    renderOverviewResultPreview();
+    if (state.activePage === "captured-rows") {
+      await loadCapturedRows({ force: true });
+    }
     const dispatchStatus = result.dispatch?.status || result.status || "UNKNOWN";
     setBanner(
       dispatchStatus === "SUCCESS"
@@ -1244,11 +1823,11 @@ async function runSelected() {
     resultPanel.textContent = error.stack || String(error);
     renderUsageTable(null, scenario);
     renderApiExplorer(null, scenario);
+    renderOverviewResultPreview();
     setBanner(`The ${scenario.serviceFamily} run failed before CloudSight could confirm it.`, "error");
   } finally {
     state.loadingScenarioId = null;
-    renderSelectedProvider();
-    renderSelectedScenario();
+    syncScenarioSurfaces({ resetBanner: false });
   }
 }
 
@@ -1267,6 +1846,10 @@ async function runRealtime() {
     for (const provider of providers) {
       setBanner(`Running ${provider} live proof through the collector…`, "running");
       const result = await json(`/demo/live/providers/${provider}/run?verify=true`, { method: "POST" });
+      const resultScenarioId = result?.scenario?.id || state.models.find((model) => model.provider === provider)?.liveScenario?.id || null;
+      state.selectedProvider = provider;
+      state.selectedScenarioId = resultScenarioId || state.selectedScenarioId;
+      rememberRun(result, getSelectedScenario());
       results.push({
         provider,
         liveCall: result.liveCall?.status || "UNKNOWN",
@@ -1275,7 +1858,7 @@ async function runRealtime() {
         verification: result.verification?.status || "UNKNOWN",
         matched: (result.verification?.matchedLogs || []).length
       });
-      state.lastRun = result;
+      syncScenarioSurfaces({ resetBanner: false });
     }
     const success = results.every((item) => item.liveCall === "SUCCESS" && item.dispatch === "SUCCESS" && item.stored >= 1);
     resultPanel.textContent = JSON.stringify({ mode: "demo-set", results }, null, 2);
@@ -1294,8 +1877,12 @@ async function runRealtime() {
       renderUsageTable(state.lastRun, scenario);
       renderRunReadback(state.lastRun, scenario);
       renderApiExplorer(state.lastRun, scenario);
+      renderOverviewResultPreview();
     }
     await loadAll();
+    if (state.activePage === "captured-rows") {
+      await loadCapturedRows({ force: true });
+    }
     setBanner(
       success
         ? "AWS, GCP, and Azure all stored rows in CloudSight successfully."
@@ -1435,7 +2022,7 @@ async function loadAll() {
   state.models = buildModels({ overview, scenarios, liveSetup, catalogs });
 
   if ((!state.selectedProvider || !state.models.some((model) => model.provider === state.selectedProvider)) && state.models.length) {
-    state.selectedProvider = state.models[0].provider;
+    state.selectedProvider = state.models.find((model) => model.provider === "GCP")?.provider || state.models[0].provider;
   }
 
   const selectedModel = getSelectedModel();
@@ -1444,30 +2031,22 @@ async function loadAll() {
     state.selectedScenarioId = selectedModel?.liveScenario?.id || selectedModel?.serviceScenarios?.[0]?.id || null;
   }
 
-  if (IS_LOCAL_PREVIEW) {
+  if (IS_LOCAL_PREVIEW && !state.lastRun) {
     state.selectedProvider = "GCP";
     state.selectedScenarioId = "gcp-storage-live";
-    state.lastRun = buildPreviewResult(getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
+    rememberRun(buildPreviewResult(getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]), getSelectedScenario());
   }
 
   renderHeroStats(overview);
   renderOverviewCards(overview);
   syncActivePage();
-  renderProviderTabs();
-  renderSelectedProvider();
-  renderSelectedScenario();
   renderProviderDirectory();
-  renderOverviewPopularTests();
-  renderResultSummary(state.lastRun, getSelectedScenario() || { serviceFamily: "proof", provider: "GCP" });
-  renderFlowExplanation(getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0], state.lastRun);
-  renderResultNarrative(state.lastRun, getSelectedScenario() || { serviceFamily: "proof" });
-  renderUsageTable(state.lastRun, getSelectedScenario() || {});
-  renderRunReadback(state.lastRun, getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
-  renderApiExplorer(state.lastRun, getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]);
-  if (resultPanel && state.lastRun) {
-    resultPanel.textContent = JSON.stringify(state.lastRun, null, 2);
+  syncScenarioSurfaces({ resetBanner: false });
+  if (state.activePage === "captured-rows") {
+    await loadCapturedRows();
   }
   await loadAudit();
+  renderOverviewResultPreview();
 }
 
 bindPageNavigation();
