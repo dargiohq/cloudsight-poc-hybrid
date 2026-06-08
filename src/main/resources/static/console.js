@@ -31,6 +31,10 @@ const apiExplorerRequest = document.getElementById("apiExplorerRequest");
 const apiExplorerResponse = document.getElementById("apiExplorerResponse");
 const apiExplorerStatus = document.getElementById("apiExplorerStatus");
 const apiExplorerLatency = document.getElementById("apiExplorerLatency");
+const apiExplorerMethod = document.getElementById("apiExplorerMethod");
+const apiExplorerPath = document.getElementById("apiExplorerPath");
+const apiExplorerSendButtons = Array.from(document.querySelectorAll("[data-api-explorer-send]"));
+const rawJsonDownload = document.getElementById("rawJsonDownload");
 const quickRunDemoSet = document.getElementById("quickRunDemoSet");
 const quickRunDemoSetSecondary = document.getElementById("quickRunDemoSetSecondary");
 const overviewRunDemoSet = document.getElementById("overviewRunDemoSet");
@@ -72,6 +76,7 @@ const state = {
   capturedRowsLoaded: false,
   capturedRowsLoading: false,
   capturedRowsError: "",
+  apiExplorerSending: false,
   capturedFilters: {
     cloud: "All clouds",
     service: "All services",
@@ -373,6 +378,19 @@ if (applyCapturedFilters) {
 }
 if (exportCapturedRows) {
   exportCapturedRows.addEventListener("click", () => exportVisibleCapturedRows());
+}
+apiExplorerSendButtons.forEach((button) => {
+  button.addEventListener("click", () => sendApiExplorerRequest());
+});
+if (apiExplorerPath) {
+  apiExplorerPath.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      sendApiExplorerRequest();
+    }
+  });
+}
+if (rawJsonDownload) {
+  rawJsonDownload.addEventListener("click", () => downloadRawJsonPayload());
 }
 
 async function json(url, options) {
@@ -751,8 +769,8 @@ function renderSelectedScenario(options = {}) {
   renderApiExplorer(matchedResult, scenario);
   if (resultPanel) {
     resultPanel.textContent = matchedResult
-      ? JSON.stringify(matchedResult, null, 2)
-      : "Run a proof to inspect the latest collector result.";
+      ? JSON.stringify({ source: "current-run", run: matchedResult }, null, 2)
+      : JSON.stringify(rawJsonPayload(), null, 2);
   }
   if (!matchedResult && !isRunning && !state.runningAll && options.resetBanner !== false) {
     setBanner(
@@ -1099,6 +1117,8 @@ async function loadCapturedRows(options = {}) {
   } finally {
     state.capturedRowsLoading = false;
     renderCapturedRowsTable();
+    renderRawJsonPanel();
+    renderApiExplorer(currentScenarioResult(getSelectedScenario()), getSelectedScenario());
   }
 }
 
@@ -1255,6 +1275,159 @@ function exportVisibleCapturedRows() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function latestCapturedRows(limit = 5) {
+  const rows = normalizeCapturedRows(state.capturedRows);
+  if (rows.length) {
+    return rows.slice(0, limit);
+  }
+
+  const runRows = normalizeCapturedRows(rowsForResult(state.lastRun, getSelectedScenario()));
+  if (runRows.length) {
+    return runRows.slice(0, limit);
+  }
+
+  if (IS_LOCAL_PREVIEW) {
+    return normalizeCapturedRows(LOCAL_PREVIEW_DATA.capturedRows.rows).slice(0, limit);
+  }
+
+  return [];
+}
+
+function rowIdentifier(row, index = 0) {
+  return row.id
+    || row.runId
+    || row.sourceReference
+    || `${row.service || "row"}-${row.timestamp || index}`;
+}
+
+function explorerRowsPayload(rows, source = "latest-captured-rows") {
+  return {
+    source,
+    data: rows.map((row, index) => ({
+      id: rowIdentifier(row, index),
+      cloud: providerLabel(inferredProviderFromRow(row)),
+      service: row.service || row.serviceFamily || inferredProviderFromRow(row),
+      endpoint: row.inputEndpoint || row.primaryEndpoint || "—",
+      object: row.objectName || row.bucketObject || row.bucket || row.resourceName || row.sourceReference || row.outputEndpoint || "—",
+      status: row.status || row.dispatchStatus || "Stored",
+      cost: row.calculatedCost ?? row.estimatedCost ?? row.totalCost ?? "—",
+      timestamp: row.timestamp || row.createdAt || row.recordedAt || "—"
+    })),
+    pagination: {
+      next: null,
+      nextToken: null
+    }
+  };
+}
+
+function rawJsonPayload() {
+  if (state.lastRun) {
+    return {
+      source: "current-run",
+      run: state.lastRun
+    };
+  }
+
+  const rows = latestCapturedRows(10);
+  if (rows.length) {
+    return {
+      source: "latest-captured-rows",
+      latestRow: rows[0],
+      rows
+    };
+  }
+
+  return {
+    source: "empty",
+    message: "No captured rows are available yet. Run a live proof or refresh Captured Rows."
+  };
+}
+
+function renderRawJsonPanel(force = false) {
+  if (!resultPanel) {
+    return;
+  }
+  if (!force && state.loadingScenarioId) {
+    return;
+  }
+  resultPanel.textContent = JSON.stringify(rawJsonPayload(), null, 2);
+}
+
+function downloadRawJsonPayload() {
+  const blob = new Blob([JSON.stringify(rawJsonPayload(), null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `cloudsight-raw-${state.lastRun?.runId || "latest"}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function normalizeExplorerPath(pathValue) {
+  let path = String(pathValue || "/v1/rows").trim();
+  if (!path.startsWith("/")) {
+    path = `/${path}`;
+  }
+  if (path === "/v1/rows" || path === "/v1/rows/") {
+    return "/demo/captured-rows?page=0&size=5";
+  }
+  if (path === "/v1/rows/latest" || path === "/v1/rows/latest/") {
+    return "/demo/captured-rows?page=0&size=1";
+  }
+  return path;
+}
+
+function setApiExplorerState(label, className = "", latency = "") {
+  if (apiExplorerStatus) {
+    apiExplorerStatus.textContent = label;
+    apiExplorerStatus.className = `status-chip ${className}`.trim();
+  }
+  if (apiExplorerLatency) {
+    apiExplorerLatency.textContent = latency;
+  }
+}
+
+async function sendApiExplorerRequest() {
+  if (!apiExplorerRequest || !apiExplorerResponse || state.apiExplorerSending) {
+    return;
+  }
+
+  const method = apiExplorerMethod?.value || "GET";
+  const path = normalizeExplorerPath(apiExplorerPath?.value);
+  const startedAt = performance.now();
+
+  state.apiExplorerSending = true;
+  setApiExplorerState("Sending", "status-warn", "Calling endpoint…");
+  apiExplorerResponse.textContent = "Waiting for CloudSight response…";
+
+  try {
+    const payload = await json(path, method === "GET" ? undefined : { method });
+    const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));
+
+    if (path.startsWith("/demo/captured-rows")) {
+      state.capturedRows = normalizeCapturedRows(payload.rows || []);
+      state.capturedRowsLoaded = true;
+      renderCapturedRowsTable();
+    }
+
+    apiExplorerRequest.textContent = JSON.stringify({
+      method,
+      path,
+      selectedProof: sampleRequestContract(getSelectedScenario() || {})
+    }, null, 2);
+    apiExplorerResponse.textContent = JSON.stringify(payload, null, 2);
+    setApiExplorerState("200 OK", "status-ok", `${elapsedMs} ms`);
+    renderRawJsonPanel();
+  } catch (error) {
+    apiExplorerResponse.textContent = error.stack || String(error);
+    setApiExplorerState("Error", "status-error", "Request failed");
+  } finally {
+    state.apiExplorerSending = false;
+  }
 }
 
 function providerTone(model) {
@@ -1619,46 +1792,38 @@ function renderApiExplorer(result, scenario) {
     return;
   }
 
+  const method = apiExplorerMethod?.value || "GET";
+  const path = normalizeExplorerPath(apiExplorerPath?.value);
+
   if (!scenario) {
-    apiExplorerRequest.textContent = "Pick a service to see the current proof contract.";
-    apiExplorerResponse.textContent = "Run a proof to inspect the latest collector result.";
-    if (apiExplorerStatus) {
-      apiExplorerStatus.textContent = "Idle";
-      apiExplorerStatus.className = "status-chip";
-    }
-    if (apiExplorerLatency) {
-      apiExplorerLatency.textContent = "";
-    }
+    apiExplorerRequest.textContent = JSON.stringify({ method, path }, null, 2);
+    const rows = latestCapturedRows(5);
+    apiExplorerResponse.textContent = rows.length
+      ? JSON.stringify(explorerRowsPayload(rows), null, 2)
+      : "Run a proof to inspect the latest collector result.";
+    setApiExplorerState(rows.length ? "200 OK" : "Idle", rows.length ? "status-ok" : "", rows.length ? "latest stored rows" : "");
     return;
   }
 
   apiExplorerRequest.textContent = JSON.stringify({
-    method: scenario.executionMode === "live-provider-call" ? "POST" : "GET",
-    path: scenario.executionMode === "live-provider-call" ? `/demo/live/providers/${scenario.provider}/run` : `/demo/scenarios/${scenario.id}/run`,
+    method,
+    path,
+    proofEndpoint: scenario.executionMode === "live-provider-call" ? `/demo/live/providers/${scenario.provider}/run` : `/demo/scenarios/${scenario.id}/run`,
     query: { verify: true },
     body: sampleRequestContract(scenario)
   }, null, 2);
 
   if (!result) {
-    apiExplorerResponse.textContent = "Run a proof to inspect the latest collector result.";
-    if (apiExplorerStatus) {
-      apiExplorerStatus.textContent = "Ready";
-      apiExplorerStatus.className = "status-chip status-warn";
-    }
-    if (apiExplorerLatency) {
-      apiExplorerLatency.textContent = "Waiting for run";
-    }
+    const rows = latestCapturedRows(5);
+    apiExplorerResponse.textContent = rows.length
+      ? JSON.stringify(explorerRowsPayload(rows), null, 2)
+      : "Run a proof to inspect the latest collector result.";
+    setApiExplorerState(rows.length ? "200 OK" : "Ready", rows.length ? "status-ok" : "status-warn", rows.length ? "latest stored rows" : "Waiting for run");
     return;
   }
 
   const responseStatus = result.dispatch?.status === "SUCCESS" || result.status === "SUCCESS" ? "200 OK" : "202 Accepted";
-  if (apiExplorerStatus) {
-    apiExplorerStatus.textContent = responseStatus;
-    apiExplorerStatus.className = `status-chip ${responseStatus.startsWith("200") ? "status-ok" : "status-warn"}`;
-  }
-  if (apiExplorerLatency) {
-    apiExplorerLatency.textContent = "317 ms";
-  }
+  setApiExplorerState(responseStatus, responseStatus.startsWith("200") ? "status-ok" : "status-warn", "317 ms");
 
   apiExplorerResponse.textContent = JSON.stringify({
     data: [
@@ -2037,14 +2202,13 @@ async function loadAll() {
     rememberRun(buildPreviewResult(getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]), getSelectedScenario());
   }
 
+  await loadCapturedRows({ force: true });
+
   renderHeroStats(overview);
   renderOverviewCards(overview);
   syncActivePage();
   renderProviderDirectory();
   syncScenarioSurfaces({ resetBanner: false });
-  if (state.activePage === "captured-rows") {
-    await loadCapturedRows();
-  }
   await loadAudit();
   renderOverviewResultPreview();
 }

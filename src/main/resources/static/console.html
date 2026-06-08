@@ -277,7 +277,7 @@
               <a class="inline-link compact-link" href="#captured-rows" data-nav-page="captured-rows">Back to Captured Rows</a>
             </div>
             <div class="toolbar-actions">
-              <button class="toolbar-button secondary" type="button">Download</button>
+              <button id="rawJsonDownload" class="toolbar-button secondary" type="button">Download</button>
             </div>
           </div>
           <div class="json-mode-tabs">
@@ -329,15 +329,15 @@
               <h2>Test CloudSight API endpoints</h2>
               <p class="card-copy">Inspect the selected proof contract and the latest collector response.</p>
             </div>
-            <button class="toolbar-button primary" type="button">Send</button>
+            <button class="toolbar-button primary" type="button" data-api-explorer-send>Send</button>
           </div>
           <div class="api-request-bar">
-            <select class="table-filter">
+            <select id="apiExplorerMethod" class="table-filter">
               <option>GET</option>
               <option>POST</option>
             </select>
-            <input class="table-search" type="text" value="/v1/rows" aria-label="API path" />
-            <button class="toolbar-button primary" type="button">Send</button>
+            <input id="apiExplorerPath" class="table-search" type="text" value="/v1/rows" aria-label="API path" />
+            <button class="toolbar-button primary" type="button" data-api-explorer-send>Send</button>
           </div>
           <div class="panel-tabs">
             <button class="response-tab" type="button">Params</button>
