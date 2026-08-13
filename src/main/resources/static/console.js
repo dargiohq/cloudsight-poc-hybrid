@@ -66,6 +66,10 @@ const DETAIL_PAGE_MAP = {
   raw: "raw-json"
 };
 
+function pageFromHash() {
+  return window.location.hash.replace(/^#\/?/, "");
+}
+
 const state = {
   models: [],
   selectedProvider: null,
@@ -87,7 +91,7 @@ const state = {
   },
   loadingScenarioId: null,
   runningAll: false,
-  activePage: PAGE_IDS.has(window.location.hash.replace("#", "")) ? window.location.hash.replace("#", "") : "overview"
+  activePage: PAGE_IDS.has(pageFromHash()) ? pageFromHash() : "overview"
 };
 
 if ("scrollRestoration" in window.history) {
@@ -516,7 +520,7 @@ function bindPageNavigation() {
   });
 
   window.addEventListener("hashchange", () => {
-    const nextPage = window.location.hash.replace("#", "");
+    const nextPage = pageFromHash();
     if (PAGE_IDS.has(nextPage)) {
       setActivePage(nextPage, { skipHashUpdate: true, skipScroll: true });
     }
