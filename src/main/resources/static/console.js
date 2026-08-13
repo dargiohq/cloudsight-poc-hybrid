@@ -46,11 +46,13 @@ const applyCapturedFilters = document.getElementById("applyCapturedFilters");
 const exportCapturedRows = document.getElementById("exportCapturedRows");
 const pageSections = Array.from(document.querySelectorAll(".workspace-page"));
 const navPageLinks = Array.from(document.querySelectorAll("[data-nav-page]"));
-const IS_LOCAL_PREVIEW =
+const IS_STATIC_PREVIEW =
   window.location.protocol === "file:" ||
   window.location.hostname === "localhost" ||
-  window.location.hostname === "127.0.0.1";
-const API_BASE = IS_LOCAL_PREVIEW ? "https://poc.cloudsight.dargio.in" : "";
+  window.location.hostname === "127.0.0.1" ||
+  window.location.hostname.endsWith("oraclecloud.com") ||
+  window.location.search.includes("static=1");
+const API_BASE = IS_STATIC_PREVIEW ? "" : "";
 const DEMO_VISIBLE_PROVIDERS = ["AWS", "GCP", "AZURE"];
 const DETAIL_PAGES = [
   { id: "captured", label: "Captured rows" },
@@ -100,7 +102,7 @@ const LOCAL_PREVIEW_DATA = {
         collectorUrl: "https://collector-aws.cloudsight.dargio.in",
         serviceFamilies: ["S3", "Lambda", "EC2 + EBS", "RDS", "API Gateway", "CloudFront", "DynamoDB", "SQS + SNS"],
         liveProviderReady: true,
-        liveProviderCalls: "Selected live provider call is configured for this collector.",
+        liveProviderCalls: "Selected provider-style demo is configured for this collector.",
         executionMode: "collector-replay + optional live-provider-call"
       },
       {
@@ -108,7 +110,7 @@ const LOCAL_PREVIEW_DATA = {
         collectorUrl: "https://collector-gcp.cloudsight.dargio.in",
         serviceFamilies: ["Cloud Storage", "Gemini", "Vision", "Cloud Run", "GKE runtime", "BigQuery", "Pub/Sub"],
         liveProviderReady: true,
-        liveProviderCalls: "Selected live provider call is configured for this collector.",
+        liveProviderCalls: "Selected provider-style demo is configured for this collector.",
         executionMode: "collector-replay + optional live-provider-call"
       },
       {
@@ -116,7 +118,7 @@ const LOCAL_PREVIEW_DATA = {
         collectorUrl: "https://collector-azure.cloudsight.dargio.in",
         serviceFamilies: ["Blob Storage", "VM", "Functions", "Azure OpenAI", "Azure SQL", "Cosmos DB"],
         liveProviderReady: true,
-        liveProviderCalls: "Selected live provider call is configured for this collector.",
+        liveProviderCalls: "Selected provider-style demo is configured for this collector.",
         executionMode: "collector-replay + optional live-provider-call"
       }
     ],
@@ -226,11 +228,11 @@ const LOCAL_PREVIEW_DATA = {
     }
   ],
   scenarios: [
-    { id: "aws-s3-live", provider: "AWS", title: "Live S3 PutObject", serviceFamily: "S3", primaryEndpoint: "storage.objects.insert", secondaryEndpoint: "storage.objects.get", collectorUrl: "https://collector-aws.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Writes a tiny object to the configured S3 bucket, then forwards the matching collector payload." },
+    { id: "aws-s3-live", provider: "AWS", title: "Live S3 PutObject", serviceFamily: "S3", primaryEndpoint: "storage.objects.insert", secondaryEndpoint: "storage.objects.get", collectorUrl: "https://collector-aws.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Simulates a tiny S3 object event with bundled demo data, then forwards the matching collector payload." },
     { id: "aws-ec2", provider: "AWS", title: "List EC2 instances", serviceFamily: "EC2", primaryEndpoint: "ec2:DescribeInstances", secondaryEndpoint: "ec2:DescribeVolumes", collectorUrl: "https://collector-aws.cloudsight.dargio.in", signalType: "Collector replay", executionMode: "collector-replay", realCloudReady: false, realCloudNote: "Uses a safe EC2-style metric summary through the collector." },
-    { id: "gcp-storage-live", provider: "GCP", title: "Cloud Storage upload", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", secondaryEndpoint: "storage.objects.get", collectorUrl: "https://collector-gcp.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Uploads a tiny object to the configured GCS bucket, then forwards the matching collector payload." },
+    { id: "gcp-storage-live", provider: "GCP", title: "Cloud Storage upload", serviceFamily: "Cloud Storage", primaryEndpoint: "storage.objects.insert", secondaryEndpoint: "storage.objects.get", collectorUrl: "https://collector-gcp.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Simulates a tiny GCS object event with bundled demo data, then forwards the matching collector payload." },
     { id: "gcp-bigquery", provider: "GCP", title: "BigQuery query", serviceFamily: "BigQuery", primaryEndpoint: "jobs.insert", secondaryEndpoint: "tables.get", collectorUrl: "https://collector-gcp.cloudsight.dargio.in", signalType: "Collector replay", executionMode: "collector-replay", realCloudReady: false, realCloudNote: "Uses a BigQuery job summary through the collector." },
-    { id: "azure-blob-live", provider: "AZURE", title: "Blob upload", serviceFamily: "Blob Storage", primaryEndpoint: "PutBlob", secondaryEndpoint: "GetBlob", collectorUrl: "https://collector-azure.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Uploads a tiny block blob through the configured SAS URL, then forwards the matching collector payload." },
+    { id: "azure-blob-live", provider: "AZURE", title: "Blob upload", serviceFamily: "Blob Storage", primaryEndpoint: "PutBlob", secondaryEndpoint: "GetBlob", collectorUrl: "https://collector-azure.cloudsight.dargio.in", signalType: "Provider call", executionMode: "live-provider-call", realCloudReady: true, realCloudNote: "Simulates a tiny Azure Blob event with bundled demo data, then forwards the matching collector payload." },
     { id: "azure-vm", provider: "AZURE", title: "VM compute summary", serviceFamily: "VM", primaryEndpoint: "vm-core-hour", secondaryEndpoint: "vm-memory-gb-hour", collectorUrl: "https://collector-azure.cloudsight.dargio.in", signalType: "Collector replay", executionMode: "collector-replay", realCloudReady: false, realCloudNote: "Uses VM summaries through the collector." }
   ],
   capturedRows: {
@@ -394,7 +396,7 @@ if (rawJsonDownload) {
 }
 
 async function json(url, options) {
-  if (IS_LOCAL_PREVIEW) {
+  if (IS_STATIC_PREVIEW) {
     return localPreviewResponse(url);
   }
   const response = await fetch(`${API_BASE}${url}`, options);
@@ -694,11 +696,11 @@ function renderSelectedProvider() {
   }
 
   selectedProviderTitle.textContent = getSelectedScenario()?.serviceFamily || model.provider;
-  selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected live proof");
+  selectedProviderStatus.textContent = statusLabel(Boolean(model.setup.configured), model.setup.selectedService || "selected safe proof");
   selectedProviderStatus.className = `status-chip ${model.setup.configured ? "status-ok" : "status-warn"}`;
   selectedProviderSummary.textContent = model.setup.configured
-    ? `This cloud is ready for a real provider proof that ends in a stored CloudSight row.`
-    : `Collector replay is ready now. Add live credentials later if you want a real provider call.`;
+    ? `This cloud is ready for a safe provider-style proof that ends in a stored CloudSight row.`
+    : `Collector replay is ready now with bundled sample data.`;
 
   const familyCount = (model.catalog.serviceFamilies || []).length;
   selectedProviderMeta.innerHTML = `
@@ -792,7 +794,7 @@ function buildFlowItems(scenario, result) {
     {
       title: "Trigger",
       body: isLive
-        ? `${provider} made a real provider call for ${scenario.serviceFamily}.`
+        ? `${provider} produced a provider-style event for ${scenario.serviceFamily}.`
         : `${provider} generated a safe provider-native collector payload for ${scenario.serviceFamily}.`
     },
     {
@@ -884,17 +886,17 @@ function renderResultNarrative(result, scenario) {
   let message = "The run completed.";
 
   if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && deliveryMode === "COLLECTOR_USAGE_RELAY") {
-    message = "The real provider call succeeded and the collector relayed the normalized row into CloudSight successfully.";
+    message = "The provider-style proof succeeded and the collector relayed the normalized row into CloudSight successfully.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && verificationStatus === "SUCCESS" && result.verification?.fallback) {
-    message = "The real provider call succeeded, the collector stored the row in CloudSight, and this page is showing the exact captured row for the current run.";
+    message = "The provider-style proof succeeded, the collector stored the row in CloudSight, and this page is showing the exact captured row for the current run.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS" && verificationStatus === "SUCCESS") {
-    message = "The real provider call succeeded, the collector stored the signal in CloudSight, and the matching row was confirmed.";
+    message = "The provider-style proof succeeded, the collector stored the signal in CloudSight, and the matching row was confirmed.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "SUCCESS") {
-    message = "The real provider call succeeded, the collector stored the signal, and the usage table below is showing the captured CloudSight row.";
+    message = "The provider-style proof succeeded, the collector stored the signal, and the usage table below is showing the captured CloudSight row.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
-    message = "The real provider call succeeded, but CloudSight throttled the collector dispatch. Wait a few seconds and retry.";
+    message = "The provider-style proof succeeded, but CloudSight throttled the collector dispatch. Wait a few seconds and retry.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "ERROR") {
-    message = "The real provider call succeeded, but the collector dispatch failed before CloudSight could store the signal.";
+    message = "The provider-style proof succeeded, but the collector dispatch failed before CloudSight could store the signal.";
   } else if (dispatchStatus === "SUCCESS") {
     message = "The collector replay succeeded, and the usage table below is showing the stored row.";
   } else if (verificationStatus === "RATE_LIMITED") {
@@ -995,9 +997,9 @@ function renderUsageTable(result, scenario) {
   const dispatchRows = rowsFromDispatch(result, scenario);
   let rows = readbackRows.length ? readbackRows : dispatchRows;
 
-  if (IS_LOCAL_PREVIEW && state.activePage === "captured-rows") {
+  if (IS_STATIC_PREVIEW && state.activePage === "captured-rows") {
     rows = localPreviewRows(LOCAL_PREVIEW_DATA.capturedRows.rows).slice(0, 4);
-  } else if (IS_LOCAL_PREVIEW && rows.length < 4) {
+  } else if (IS_STATIC_PREVIEW && rows.length < 4) {
     const previewRows = localPreviewRows(LOCAL_PREVIEW_DATA.capturedRows.rows);
     const seen = new Set(rows.map((row) => `${row.service || ""}-${row.inputEndpoint || ""}-${row.timestamp || ""}`));
     rows = [
@@ -1094,7 +1096,7 @@ async function loadCapturedRows(options = {}) {
   renderCapturedRowsTable();
 
   try {
-    if (IS_LOCAL_PREVIEW) {
+    if (IS_STATIC_PREVIEW) {
       state.capturedRows = normalizeCapturedRows(LOCAL_PREVIEW_DATA.capturedRows.rows);
     } else {
       const searchQuery = state.capturedFilters.search.trim();
@@ -1177,7 +1179,7 @@ function filteredCapturedRows() {
     if (search && !rowSearchText(row).includes(search)) {
       return false;
     }
-    if (!IS_LOCAL_PREVIEW) {
+    if (!IS_STATIC_PREVIEW) {
       const timestamp = parseRowTime(row);
       if (timestamp && timestamp < rangeStart) {
         return false;
@@ -1193,7 +1195,7 @@ function renderCapturedRowsTable() {
     return;
   }
 
-  if (!state.capturedRowsLoaded && !state.capturedRowsLoading && IS_LOCAL_PREVIEW) {
+  if (!state.capturedRowsLoaded && !state.capturedRowsLoading && IS_STATIC_PREVIEW) {
     state.capturedRows = normalizeCapturedRows(LOCAL_PREVIEW_DATA.capturedRows.rows);
     state.capturedRowsLoaded = true;
   }
@@ -1288,7 +1290,7 @@ function latestCapturedRows(limit = 5) {
     return runRows.slice(0, limit);
   }
 
-  if (IS_LOCAL_PREVIEW) {
+  if (IS_STATIC_PREVIEW) {
     return normalizeCapturedRows(LOCAL_PREVIEW_DATA.capturedRows.rows).slice(0, limit);
   }
 
@@ -1341,7 +1343,7 @@ function rawJsonPayload() {
 
   return {
     source: "empty",
-    message: "No captured rows are available yet. Run a live proof or refresh Captured Rows."
+    message: "No captured rows are available yet. Run a safe proof or refresh Captured Rows."
   };
 }
 
@@ -1874,10 +1876,10 @@ function renderRunReadback(result, scenario) {
     note = "CloudSight accepted the collector dispatch. Confirmation is still polling for the newest stored row.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "RATE_LIMITED") {
     title = "Collector dispatch throttled";
-    note = "The real provider call succeeded, but the collector hit rate limiting before CloudSight could confirm the row.";
+    note = "The provider-style proof succeeded, but the collector hit rate limiting before CloudSight could confirm the row.";
   } else if (liveStatus === "SUCCESS" && dispatchStatus === "ERROR") {
     title = "Collector dispatch failed";
-    note = "The real provider call succeeded, but the collector could not deliver the normalized signal to CloudSight.";
+    note = "The provider-style proof succeeded, but the collector could not deliver the normalized signal to CloudSight.";
   }
 
   readbackNote.innerHTML = `
@@ -1951,7 +1953,7 @@ async function runSelected(options = {}) {
   syncScenarioSurfaces({ resetBanner: false });
   setBanner(
     scenario.executionMode === "live-provider-call"
-      ? `Running a real ${providerLabel(scenario.provider)} provider call and forwarding the collector payload…`
+      ? `Running a safe ${providerLabel(scenario.provider)} provider-style proof and forwarding the collector payload…`
       : `Running the ${providerLabel(scenario.provider)} collector replay for ${scenario.serviceFamily}…`,
     "running"
   );
@@ -2002,14 +2004,14 @@ async function runRealtime() {
   setActivePage("live-test", { skipScroll: true });
   button.disabled = true;
   button.textContent = "Running demo set…";
-  setBanner("Running the AWS, GCP, and Azure live collector proofs one by one.", "running");
+  setBanner("Running the AWS, GCP, and Azure safe collector proofs one by one.", "running");
   try {
     const providers = state.models
       .filter((model) => model.setup.configured && model.liveScenario)
       .map((model) => model.provider);
     const results = [];
     for (const provider of providers) {
-      setBanner(`Running ${provider} live proof through the collector…`, "running");
+      setBanner(`Running ${provider} safe proof through the collector…`, "running");
       const result = await json(`/demo/live/providers/${provider}/run?verify=true`, { method: "POST" });
       const resultScenarioId = result?.scenario?.id || state.models.find((model) => model.provider === provider)?.liveScenario?.id || null;
       state.selectedProvider = provider;
@@ -2196,7 +2198,7 @@ async function loadAll() {
     state.selectedScenarioId = selectedModel?.liveScenario?.id || selectedModel?.serviceScenarios?.[0]?.id || null;
   }
 
-  if (IS_LOCAL_PREVIEW && !state.lastRun) {
+  if (IS_STATIC_PREVIEW && !state.lastRun) {
     state.selectedProvider = "GCP";
     state.selectedScenarioId = "gcp-storage-live";
     rememberRun(buildPreviewResult(getSelectedScenario() || LOCAL_PREVIEW_DATA.scenarios[0]), getSelectedScenario());
