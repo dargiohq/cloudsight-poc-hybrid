@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Collector Playground</title>
-  <link rel="stylesheet" href="./console.css?v=19">
+  <link rel="stylesheet" href="./console.css?v=20">
 </head>
 <body>
   <div class="playground-app">
@@ -29,13 +29,14 @@
         <a class="nav-item" href="#audit-trail" data-nav-page="audit-trail"><span class="nav-icon">05</span>Audit Trail</a>
         <a class="nav-item" href="#providers" data-nav-page="providers"><span class="nav-icon">06</span>Providers</a>
         <a class="nav-item" href="#api-explorer" data-nav-page="api-explorer"><span class="nav-icon">07</span>API Explorer</a>
+        <a class="nav-item" href="#architecture" data-nav-page="architecture"><span class="nav-icon">08</span>Architecture</a>
       </div>
 
       <div class="side-group">
         <div class="side-label">Utility Pages</div>
-        <a class="nav-item subtle" href="#docs" data-nav-page="docs"><span class="nav-icon">08</span>Docs</a>
-        <a class="nav-item subtle" href="#environment" data-nav-page="environment"><span class="nav-icon">09</span>Environment</a>
-        <a class="nav-item subtle" href="#help" data-nav-page="help"><span class="nav-icon">10</span>Help / Support</a>
+        <a class="nav-item subtle" href="#docs" data-nav-page="docs"><span class="nav-icon">09</span>Docs</a>
+        <a class="nav-item subtle" href="#environment" data-nav-page="environment"><span class="nav-icon">10</span>Environment</a>
+        <a class="nav-item subtle" href="#help" data-nav-page="help"><span class="nav-icon">11</span>Help / Support</a>
       </div>
 
       <div class="side-footer">
@@ -363,6 +364,351 @@
         </section>
       </section>
 
+      <section class="workspace-page" data-page="architecture" id="architecture">
+        <section class="architecture-hero">
+          <div>
+            <div class="card-label">Client Architecture Guide</div>
+            <h1>CloudSight from first question to production telemetry</h1>
+            <p>
+              This page is a complete client-facing guide for CloudSight: what problem it solves, how the
+              collector architecture works, how a customer integrates from scratch, what data is stored, and
+              how teams prove value before they connect real cloud accounts.
+            </p>
+          </div>
+          <div class="architecture-scorecard" aria-label="CloudSight value summary">
+            <div><strong>3</strong><span>Clouds in one model</span></div>
+            <div><strong>1</strong><span>Normalized cost stream</span></div>
+            <div><strong>0</strong><span>Provider writes required for dry-run proof</span></div>
+          </div>
+        </section>
+
+        <section class="architecture-grid architecture-grid-three">
+          <article class="architecture-card">
+            <span class="architecture-icon">01</span>
+            <h2>Why CloudSight exists</h2>
+            <p>
+              Cloud cost data is usually late, fragmented, and hard to trust. Finance sees invoices after the
+              spend happened. Engineering sees service metrics without normalized unit economics. Leadership
+              sees summaries that hide which API, team, provider, or endpoint actually moved the bill.
+            </p>
+            <p>
+              CloudSight gives every team one collector-first telemetry layer for cloud and AI spend. The goal
+              is not only reporting. The goal is fast cost observability: detect usage, normalize it, prove it
+              with audit evidence, and make optimization work actionable.
+            </p>
+          </article>
+          <article class="architecture-card">
+            <span class="architecture-icon">02</span>
+            <h2>What the client gets</h2>
+            <ul class="architecture-list">
+              <li>Executive dashboard for total spend, request volume, active services, and top service share.</li>
+              <li>Usage explorer for provider, service, endpoint, region, environment, and date-range analysis.</li>
+              <li>Reports for finance statements, budget summaries, allocation reports, and custom exports.</li>
+              <li>Audit trail showing provider event, collector receipt, CloudSight ingestion, and readback.</li>
+              <li>Workspace controls for roles, API keys, collectors, policies, billing posture, and settings.</li>
+            </ul>
+          </article>
+          <article class="architecture-card">
+            <span class="architecture-icon">03</span>
+            <h2>What makes it different</h2>
+            <p>
+              CloudSight starts with collectors rather than screenshots or manual invoice upload. A collector
+              can receive provider events, transform them into CloudSight's usage contract, and send them to
+              the platform with a scoped API key. The same data then powers dashboard cards, charts, reports,
+              allocation, unit economics, and audit evidence.
+            </p>
+          </article>
+        </section>
+
+        <section class="architecture-card architecture-wide">
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Reference Architecture</div>
+              <h2>How data moves through CloudSight</h2>
+              <p class="card-copy">The client controls provider credentials. CloudSight stores normalized cost telemetry and proof metadata.</p>
+            </div>
+          </div>
+          <div class="flow-diagram" role="img" aria-label="CloudSight end-to-end data flow">
+            <div class="flow-node provider-node">
+              <strong>Client Cloud</strong>
+              <span>AWS, GCP, Azure, Oracle, OpenAI, custom apps</span>
+            </div>
+            <div class="flow-arrow">Collect</div>
+            <div class="flow-node collector-node">
+              <strong>CloudSight Collector</strong>
+              <span>Receives events, maps endpoints, adds context</span>
+            </div>
+            <div class="flow-arrow">Normalize</div>
+            <div class="flow-node api-node">
+              <strong>CloudSight API</strong>
+              <span>Validates API key, writes usage, records audit</span>
+            </div>
+            <div class="flow-arrow">Analyze</div>
+            <div class="flow-node app-node">
+              <strong>CloudSight App</strong>
+              <span>Dashboards, reports, alerts, allocation</span>
+            </div>
+          </div>
+          <div class="architecture-callout">
+            <strong>Important for security reviews:</strong>
+            CloudSight does not need broad production admin access. The preferred integration is a least-privilege
+            read or event-forwarding setup, with provider credentials staying in the client's environment.
+          </div>
+        </section>
+
+        <section class="architecture-grid">
+          <article class="architecture-card">
+            <h2>Core objects</h2>
+            <dl class="architecture-definition-list">
+              <dt>Workspace</dt>
+              <dd>The client tenant. It owns users, collectors, reports, API keys, and usage rows.</dd>
+              <dt>Collector</dt>
+              <dd>A provider-specific adapter that converts cloud signals into CloudSight events.</dd>
+              <dt>Usage row</dt>
+              <dd>A normalized cost and usage record with provider, service, endpoint, units, region, tags, and source reference.</dd>
+              <dt>Audit event</dt>
+              <dd>Proof that a provider call, collector dispatch, ingestion, or readback happened.</dd>
+              <dt>Report</dt>
+              <dd>A finance or operations-ready summary generated from normalized usage rows.</dd>
+            </dl>
+          </article>
+          <article class="architecture-card">
+            <h2>Client onboarding journey</h2>
+            <ol class="architecture-steps">
+              <li><strong>Discover:</strong> agree on cloud providers, regions, billing accounts, teams, and reporting goals.</li>
+              <li><strong>Create workspace:</strong> invite admins, configure roles, and confirm timezone and default currency.</li>
+              <li><strong>Issue collector key:</strong> generate a scoped key for each provider collector.</li>
+              <li><strong>Run dry-run:</strong> replay sample events to prove ingestion without provider charges.</li>
+              <li><strong>Connect provider:</strong> add read-only credentials, export hooks, or event-forwarding routes.</li>
+              <li><strong>Validate dashboards:</strong> confirm rows, charts, reports, alerts, and audit trail.</li>
+              <li><strong>Go live:</strong> schedule reports, enable policies, and assign owners for optimization work.</li>
+            </ol>
+          </article>
+        </section>
+
+        <section class="architecture-card architecture-wide">
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Integration Blueprint</div>
+              <h2>How a client starts from scratch</h2>
+            </div>
+          </div>
+          <div class="integration-lanes">
+            <article>
+              <h3>1. Prepare provider access</h3>
+              <p>
+                Start with read-only or event-only access. For AWS this can be Cost Explorer, CloudWatch,
+                CloudTrail, S3 inventory, and service-specific APIs. For GCP this can be Billing Export,
+                Cloud Storage, BigQuery, Cloud Run, and audit logs. For Azure this can be Cost Management,
+                Monitor, Blob Storage, VM usage, and subscription metadata.
+              </p>
+            </article>
+            <article>
+              <h3>2. Install or host collector</h3>
+              <p>
+                The collector can run as a container, serverless function, scheduled job, or private service.
+                The client supplies provider credentials locally. The collector sends only normalized usage
+                events to CloudSight over HTTPS.
+              </p>
+            </article>
+            <article>
+              <h3>3. Send CloudSight events</h3>
+              <p>
+                Each event contains provider, service, endpoint, units, timestamp, region, environment, and
+                source reference. Optional tags attach team, product, customer, project, cost center, or owner.
+              </p>
+            </article>
+            <article>
+              <h3>4. Verify business outputs</h3>
+              <p>
+                The client checks the captured row, raw JSON, audit trail, usage explorer, dashboard widgets,
+                reports, allocation, and unit economics. The proof is complete only when the same event can be
+                traced from provider signal to CloudSight insight.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="architecture-grid">
+          <article class="architecture-card">
+            <h2>Example collector event</h2>
+            <pre class="architecture-code">{
+  "provider": "AWS",
+  "collectorName": "aws-prod-cost-collector",
+  "mode": "PRODUCTION",
+  "batchReference": "aws-batch-2026-08-26T10:00Z",
+  "events": [{
+    "service": "AWS",
+    "inputEndpoint": "api-gateway-request",
+    "outputEndpoint": "cloudfront-egress-gb",
+    "inputUnits": 24000,
+    "outputUnits": 18,
+    "timestamp": "2026-08-26T10:00:00Z",
+    "sourceType": "CLOUDWATCH",
+    "sourceReference": "apigw-prod-orders-10am",
+    "regionCode": "ap-south-1",
+    "deploymentEnvironment": "Production",
+    "tags": {
+      "team": "platform",
+      "product": "orders",
+      "costCenter": "finops-101"
+    }
+  }]
+}</pre>
+          </article>
+          <article class="architecture-card">
+            <h2>What CloudSight returns</h2>
+            <pre class="architecture-code">{
+  "status": "SUCCESS",
+  "stored": 1,
+  "provider": "AWS",
+  "message": "Usage event accepted",
+  "readback": {
+    "matched": 1,
+    "latestSource": "apigw-prod-orders-10am"
+  }
+}</pre>
+            <div class="architecture-mini-grid">
+              <div><strong>Dashboard</strong><span>KPI cards and spend trend update.</span></div>
+              <div><strong>Usage</strong><span>Row appears by provider, endpoint, and date range.</span></div>
+              <div><strong>Reports</strong><span>Finance exports include the normalized cost.</span></div>
+              <div><strong>Audit</strong><span>Trace proves collector receipt and DB write.</span></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="architecture-card architecture-wide">
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Security And Governance</div>
+              <h2>Controls a client security team expects</h2>
+            </div>
+          </div>
+          <div class="security-grid">
+            <div><strong>Least privilege</strong><span>Collectors use scoped provider access and scoped CloudSight API keys.</span></div>
+            <div><strong>Tenant isolation</strong><span>Usage rows, reports, API keys, and users belong to a workspace.</span></div>
+            <div><strong>Credential separation</strong><span>Provider secrets stay with the client collector runtime.</span></div>
+            <div><strong>Traceability</strong><span>Each row can reference the source event, batch, collector, and audit log.</span></div>
+            <div><strong>Retention policy</strong><span>Clients define retention, export cadence, and audit requirements.</span></div>
+            <div><strong>Operational health</strong><span>Status checks cover API, database, collectors, ingestion, and backup freshness.</span></div>
+          </div>
+        </section>
+
+        <section class="architecture-grid architecture-grid-three">
+          <article class="architecture-card">
+            <h2>Implementation roles</h2>
+            <ul class="architecture-list">
+              <li><strong>Client cloud admin:</strong> creates read-only roles and export permissions.</li>
+              <li><strong>Client platform engineer:</strong> deploys collector and owns runtime logs.</li>
+              <li><strong>FinOps owner:</strong> validates reports, tags, allocation, and budget rules.</li>
+              <li><strong>CloudSight admin:</strong> manages workspace, users, API keys, and onboarding state.</li>
+            </ul>
+          </article>
+          <article class="architecture-card">
+            <h2>Proof checklist</h2>
+            <ul class="architecture-checklist">
+              <li>Collector receives a sample event.</li>
+              <li>CloudSight stores a usage row.</li>
+              <li>Raw JSON matches expected provider/service fields.</li>
+              <li>Audit trail shows provider, collector, ingestion, and verification steps.</li>
+              <li>Dashboard, usage explorer, report, and allocation views reflect the event.</li>
+              <li>Dry-run passes before any real provider write action is enabled.</li>
+            </ul>
+          </article>
+          <article class="architecture-card">
+            <h2>Commercial story</h2>
+            <p>
+              CloudSight is positioned as a cost observability system for engineering and finance together.
+              It reduces surprise bills, shortens finance reconciliation, helps teams understand API-level
+              cost drivers, and creates a repeatable path from raw cloud signals to board-ready reporting.
+            </p>
+          </article>
+        </section>
+
+        <section class="architecture-card architecture-wide">
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Client Conversation Guide</div>
+              <h2>How to explain CloudSight in a meeting</h2>
+            </div>
+          </div>
+          <div class="talk-track-grid">
+            <div>
+              <h3>Opening</h3>
+              <p>
+                "CloudSight gives you one trusted view of cloud and AI spend by collecting provider signals,
+                normalizing them into usage rows, and turning those rows into dashboards, reports, alerts,
+                allocation, and unit economics."
+              </p>
+            </div>
+            <div>
+              <h3>Risk handling</h3>
+              <p>
+                "We can prove the full data path with dry-run and replay events first. That means no real
+                provider writes and no unexpected cloud charges during evaluation."
+              </p>
+            </div>
+            <div>
+              <h3>Business value</h3>
+              <p>
+                "Finance gets faster statements. Engineering gets endpoint-level cost drivers. Leaders get a
+                dashboard they can trust because every number can be traced back to an event."
+              </p>
+            </div>
+            <div>
+              <h3>Close</h3>
+              <p>
+                "The next step is a one-provider proof: create a workspace, issue one collector key, replay
+                sample events, validate the dashboard, then connect read-only production signals."
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="architecture-card architecture-wide">
+          <div class="section-topline">
+            <div>
+              <div class="card-label">Go-Live Plan</div>
+              <h2>Recommended rollout timeline</h2>
+            </div>
+          </div>
+          <div class="timeline-plan">
+            <div><span>Day 0</span><strong>Discovery</strong><p>Confirm providers, billing accounts, target reports, tags, and owners.</p></div>
+            <div><span>Day 1</span><strong>Dry-run POC</strong><p>Replay sample AWS/GCP/Azure events and verify all CloudSight screens.</p></div>
+            <div><span>Day 2-3</span><strong>Collector setup</strong><p>Deploy collector in client environment with least-privilege access.</p></div>
+            <div><span>Day 4</span><strong>Validation</strong><p>Check rows, audit trail, dashboards, reports, allocations, and alerts.</p></div>
+            <div><span>Day 5</span><strong>Production handoff</strong><p>Enable scheduled reports, health checks, backups, and ownership workflow.</p></div>
+          </div>
+        </section>
+
+        <section class="architecture-grid">
+          <article class="architecture-card">
+            <h2>Common client questions</h2>
+            <dl class="architecture-definition-list">
+              <dt>Do you need write access to our cloud?</dt>
+              <dd>No for standard telemetry. The dry-run proof uses sample events. Production should start with read-only or event-forwarding access.</dd>
+              <dt>Where do credentials live?</dt>
+              <dd>Provider credentials should live in the client collector runtime. CloudSight receives normalized events over HTTPS.</dd>
+              <dt>Can this support custom internal services?</dt>
+              <dd>Yes. Any internal system can send the same usage event contract with service, endpoint, units, tags, and source reference.</dd>
+              <dt>How do we prove numbers are correct?</dt>
+              <dd>Use captured rows, raw JSON, readback, audit trail, and reports from the same source reference.</dd>
+            </dl>
+          </article>
+          <article class="architecture-card">
+            <h2>Next actions in this playground</h2>
+            <div class="architecture-action-list">
+              <a href="#live-test" data-nav-page="live-test">Run a safe live test</a>
+              <a href="#captured-rows" data-nav-page="captured-rows">Review captured rows</a>
+              <a href="#raw-json" data-nav-page="raw-json">Inspect raw JSON</a>
+              <a href="#audit-trail" data-nav-page="audit-trail">Trace the audit trail</a>
+              <a href="#api-explorer" data-nav-page="api-explorer">Open API Explorer</a>
+              <a href="https://cloudsight.dargio.in" target="_blank" rel="noreferrer">Open main CloudSight app</a>
+            </div>
+          </article>
+        </section>
+      </section>
+
       <section class="workspace-page" data-page="docs">
         <section class="utility-panel">
           <div class="section-topline">
@@ -378,6 +724,7 @@
               <h3>Getting started</h3>
               <a href="#overview" data-nav-page="overview">Overview</a>
               <a href="#live-test" data-nav-page="live-test">Quick start</a>
+              <a href="#architecture" data-nav-page="architecture">Architecture guide</a>
             </section>
             <section class="doc-card">
               <h3>Guides</h3>
@@ -480,6 +827,6 @@
     </main>
   </div>
 
-  <script src="./console.js?v=19" defer></script>
+  <script src="./console.js?v=20" defer></script>
 </body>
 </html>

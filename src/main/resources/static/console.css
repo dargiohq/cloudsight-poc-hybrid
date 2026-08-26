@@ -2557,6 +2557,382 @@ button.quick-card {
   padding: 16px;
 }
 
+.architecture-hero,
+.architecture-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.architecture-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+  gap: 24px;
+  align-items: end;
+  margin-bottom: 18px;
+  padding: 28px;
+  overflow: hidden;
+  position: relative;
+}
+
+.architecture-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -6% -34% 42%;
+  height: 220px;
+  background:
+    linear-gradient(90deg, rgba(49, 92, 255, 0.16), rgba(14, 165, 163, 0.14)),
+    repeating-linear-gradient(90deg, transparent 0 48px, rgba(49, 92, 255, 0.13) 49px 50px);
+  transform: rotate(-4deg);
+  pointer-events: none;
+}
+
+.architecture-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.architecture-hero h1 {
+  margin: 10px 0 12px;
+  max-width: 980px;
+  font-size: clamp(2.1rem, 4vw, 4.4rem);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.architecture-hero p,
+.architecture-card p,
+.architecture-card li,
+.architecture-definition-list dd,
+.timeline-plan p,
+.talk-track-grid p,
+.integration-lanes p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.architecture-scorecard {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.architecture-scorecard div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.architecture-scorecard strong {
+  display: inline-flex;
+  height: 52px;
+  width: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--blue), #33d2c5);
+  color: #fff;
+  font-size: 1.35rem;
+}
+
+.architecture-scorecard span {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.architecture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.architecture-grid-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.architecture-card {
+  padding: 24px;
+}
+
+.architecture-wide {
+  margin-bottom: 18px;
+}
+
+.architecture-card h2,
+.architecture-card h3 {
+  margin: 0 0 12px;
+  letter-spacing: 0;
+}
+
+.architecture-card h2 {
+  font-size: 1.45rem;
+}
+
+.architecture-card h3 {
+  font-size: 1rem;
+}
+
+.architecture-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 800;
+}
+
+.architecture-list,
+.architecture-checklist,
+.architecture-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.architecture-checklist {
+  list-style: none;
+  padding-left: 0;
+}
+
+.architecture-checklist li {
+  position: relative;
+  padding-left: 28px;
+}
+
+.architecture-checklist li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--success-soft);
+  border: 1px solid rgba(22, 163, 74, 0.35);
+}
+
+.flow-diagram {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 90px minmax(150px, 1fr) 90px minmax(150px, 1fr) 90px minmax(150px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  margin: 22px 0;
+}
+
+.flow-node {
+  min-height: 170px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 254, 0.96));
+}
+
+.flow-node strong {
+  font-size: 1.08rem;
+}
+
+.flow-node span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.provider-node {
+  border-color: rgba(245, 158, 11, 0.32);
+}
+
+.collector-node {
+  border-color: rgba(14, 165, 163, 0.32);
+}
+
+.api-node {
+  border-color: rgba(49, 92, 255, 0.32);
+}
+
+.app-node {
+  border-color: rgba(124, 58, 237, 0.32);
+}
+
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 170px;
+  color: var(--blue);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  position: relative;
+}
+
+.flow-arrow::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 2px;
+  background: var(--blue);
+  opacity: 0.34;
+}
+
+.flow-arrow::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: calc(50% - 5px);
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--blue);
+  border-top: 2px solid var(--blue);
+  transform: rotate(45deg);
+  opacity: 0.5;
+}
+
+.architecture-callout {
+  border: 1px solid rgba(49, 92, 255, 0.22);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--blue-soft);
+  color: #29406a;
+  line-height: 1.55;
+}
+
+.architecture-definition-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.architecture-definition-list dt {
+  font-weight: 800;
+  color: var(--text);
+}
+
+.architecture-definition-list dd {
+  margin: 2px 0 0;
+}
+
+.integration-lanes,
+.security-grid,
+.talk-track-grid,
+.architecture-mini-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.integration-lanes {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.integration-lanes article,
+.security-grid div,
+.talk-track-grid div,
+.architecture-mini-grid div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface-muted);
+}
+
+.security-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.security-grid div,
+.architecture-mini-grid div {
+  display: grid;
+  gap: 8px;
+}
+
+.security-grid span,
+.architecture-mini-grid span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.architecture-code {
+  overflow: auto;
+  margin: 0;
+  border-radius: 8px;
+  padding: 18px;
+  background: #0b1726;
+  color: #dbeafe;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.architecture-mini-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.talk-track-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.timeline-plan {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.timeline-plan div {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface-muted);
+}
+
+.timeline-plan span {
+  display: inline-flex;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.timeline-plan strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.architecture-action-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.architecture-action-list a {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface-muted);
+  color: var(--blue);
+  font-weight: 800;
+}
+
 @media (max-width: 1320px) {
   .proof-board {
     grid-template-columns: minmax(280px, 0.85fr) minmax(280px, 0.85fr) minmax(360px, 1.2fr);
@@ -2564,6 +2940,18 @@ button.quick-card {
 
   .quick-actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .flow-diagram,
+  .integration-lanes,
+  .security-grid,
+  .talk-track-grid,
+  .timeline-plan {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .flow-arrow {
+    display: none;
   }
 }
 
@@ -2599,6 +2987,12 @@ button.quick-card {
   .timeline-content p {
     grid-column: 1;
   }
+
+  .architecture-hero,
+  .architecture-grid,
+  .architecture-grid-three {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 860px) {
@@ -2628,7 +3022,14 @@ button.quick-card {
   .table-toolbar,
   .api-request-bar,
   .docs-grid,
-  .support-grid {
+  .support-grid,
+  .flow-diagram,
+  .integration-lanes,
+  .security-grid,
+  .talk-track-grid,
+  .timeline-plan,
+  .architecture-mini-grid,
+  .architecture-action-list {
     grid-template-columns: 1fr;
   }
 
