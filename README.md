@@ -51,7 +51,7 @@ Important note:
 
 - the premium console proves the collector-first architecture using safe provider-native signals through live collectors
 - it does not claim that every service in every cloud can be live-called without real cloud credentials and real cloud resources
-- `live provider calls` now support one safe selected service per provider when credentials and resources are configured:
+- `live provider calls` are guarded and disabled by default. Keep `ALLOW_PROVIDER_WRITE_TESTS=false` for normal demos; collector replay and read-only verification stay free. Set `ALLOW_PROVIDER_WRITE_TESTS=true` only for an explicitly approved paid/provider run:
   - `AWS`: S3 PutObject
   - `GCP`: Cloud Storage upload
   - `AZURE`: Blob upload

@@ -124,6 +124,9 @@ public class CloudSightHybridClient {
     @Value("${cloudsight.live.openai.model}")
     private String liveOpenAiModel;
 
+    @Value("${cloudsight.live.provider-write-tests.enabled:false}")
+    private boolean allowProviderWriteTests;
+
     private static final List<ServiceProfile> PROFILES = List.of(
             profile("openai-gpt4", "OPENAI", "gpt-4-input", "gpt-4-output", 4200, 1800),
             profile("openai-gpt41", "OPENAI", "gpt-4.1-input", "gpt-4.1-output", 6400, 2700),
@@ -255,6 +258,7 @@ public class CloudSightHybridClient {
     public List<Map<String, Object>> liveSetup() {
         return List.of(
                 liveSetupView(LIVE_AWS_PROVIDER, "S3 PutObject", List.of(
+                        envRequirement("ALLOW_PROVIDER_WRITE_TESTS=true", allowProviderWriteTests, "explicit opt-in for billable provider write tests"),
                         envRequirement("CLOUDSIGHT_LIVE_AWS_ACCESS_KEY_ID", configured(liveAwsAccessKeyId), "AWS access key id"),
                         envRequirement("CLOUDSIGHT_LIVE_AWS_SECRET_ACCESS_KEY", configured(liveAwsSecretAccessKey), "AWS secret access key"),
                         envRequirement("CLOUDSIGHT_LIVE_AWS_REGION", configured(liveAwsRegion), "AWS region"),
@@ -266,6 +270,7 @@ public class CloudSightHybridClient {
                         "Run the live S3 scenario to put a tiny object, send the matching collector payload, and verify the entry in CloudSight."
                 ), liveResourceSummary("bucket", liveAwsBucket, "region", liveAwsRegion)),
                 liveSetupView(LIVE_GCP_PROVIDER, "Cloud Storage object upload", List.of(
+                        envRequirement("ALLOW_PROVIDER_WRITE_TESTS=true", allowProviderWriteTests, "explicit opt-in for billable provider write tests"),
                         envRequirement("CLOUDSIGHT_LIVE_GCP_SERVICE_ACCOUNT_JSON or CLOUDSIGHT_LIVE_GCP_SERVICE_ACCOUNT_FILE", gcpServiceAccountConfigured(), "Service account JSON or secret file with storage write access"),
                         envRequirement("CLOUDSIGHT_LIVE_GCP_BUCKET", configured(liveGcpBucket), "Cloud Storage bucket for live write test")
                 ), List.of(
@@ -275,6 +280,7 @@ public class CloudSightHybridClient {
                         "Run the live GCP scenario to upload a tiny object, emit the matching collector payload, and verify the entry in CloudSight."
                 ), liveResourceSummary("bucket", liveGcpBucket, "credentialSource", gcpServiceAccountConfigured() ? gcpCredentialSource() : "Missing")),
                 liveSetupView(LIVE_AZURE_PROVIDER, "Blob Storage block blob upload", List.of(
+                        envRequirement("ALLOW_PROVIDER_WRITE_TESTS=true", allowProviderWriteTests, "explicit opt-in for billable provider write tests"),
                         envRequirement("CLOUDSIGHT_LIVE_AZURE_BLOB_CONTAINER_SAS_URL", configured(liveAzureBlobContainerSasUrl), "Container SAS URL with blob write permission")
                 ), List.of(
                         "Deploy the Azure collector and keep signed collector credentials configured.",
@@ -283,6 +289,7 @@ public class CloudSightHybridClient {
                         "Run the live Azure scenario to write a small blob, emit the matching collector payload, and verify the entry in CloudSight."
                 ), liveResourceSummary("containerSas", configured(liveAzureBlobContainerSasUrl) ? "Configured" : "Missing")),
                 liveSetupView(LIVE_OPENAI_PROVIDER, "OpenAI Responses API", List.of(
+                        envRequirement("ALLOW_PROVIDER_WRITE_TESTS=true", allowProviderWriteTests, "explicit opt-in for paid/provider live tests"),
                         envRequirement("CLOUDSIGHT_LIVE_OPENAI_API_KEY", configured(liveOpenAiApiKey), "OpenAI API key"),
                         envRequirement("CLOUDSIGHT_LIVE_OPENAI_MODEL", configured(liveOpenAiModel), "OpenAI model to call")
                 ), List.of(
@@ -1840,6 +1847,9 @@ public class CloudSightHybridClient {
     }
 
     private boolean isProviderConfigured(String provider) {
+        if (!allowProviderWriteTests) {
+            return false;
+        }
         return switch (provider.toUpperCase(Locale.ROOT)) {
             case LIVE_AWS_PROVIDER -> configured(liveAwsAccessKeyId) && configured(liveAwsSecretAccessKey) && configured(liveAwsRegion) && configured(liveAwsBucket);
             case LIVE_GCP_PROVIDER -> gcpServiceAccountConfigured() && configured(liveGcpBucket);
@@ -1878,12 +1888,18 @@ public class CloudSightHybridClient {
     }
 
     private void requireProviderConfigured(String provider) {
+        if (!allowProviderWriteTests) {
+            throw new IllegalStateException("Provider-write live tests are disabled. Set ALLOW_PROVIDER_WRITE_TESTS=true only for an intentional billable live run. Dry-run and replay tests remain safe and enabled.");
+        }
         if (!isProviderConfigured(provider)) {
             throw new IllegalStateException(provider + " live credentials are incomplete. Check the setup wizard and required environment variables.");
         }
     }
 
     private String realCloudNote(String provider, String whenReadyMessage) {
+        if (!allowProviderWriteTests) {
+            return "Provider-write live tests are intentionally disabled to avoid cloud charges. Use collector replay/read-only verification, or set ALLOW_PROVIDER_WRITE_TESTS=true for an approved paid run.";
+        }
         return isProviderConfigured(provider)
                 ? whenReadyMessage
                 : "Live credentials are not configured yet. Use the setup wizard below to enable this provider.";
