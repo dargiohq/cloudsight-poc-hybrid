@@ -3167,6 +3167,76 @@ button.quick-card {
   font-weight: 800;
 }
 
+.simulator-panel {
+  display: grid;
+  gap: 22px;
+}
+
+.simulator-scorecard {
+  margin-top: 0;
+}
+
+.simulator-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.simulator-provider-card {
+  min-height: 176px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(248,251,255,.9));
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.simulator-provider-card:hover,
+.simulator-provider-card.is-selected {
+  border-color: rgba(37,99,235,.55);
+  box-shadow: 0 18px 45px rgba(37,99,235,.14);
+  transform: translateY(-1px);
+}
+
+.simulator-provider-card strong,
+.simulator-provider-card small {
+  display: block;
+}
+
+.simulator-provider-card strong {
+  margin-top: 18px;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.simulator-provider-card small {
+  margin-top: 10px;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.openai-logo {
+  background: #f2e8ff;
+  color: #8b5cf6;
+}
+
+.simulator-grid {
+  align-items: stretch;
+}
+
+.simulator-output {
+  min-height: 240px;
+}
+
+.simulator-actions {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 @media (max-width: 1320px) {
   .proof-board {
     grid-template-columns: minmax(280px, 0.85fr) minmax(280px, 0.85fr) minmax(360px, 1.2fr);
@@ -3229,6 +3299,7 @@ button.quick-card {
   .architecture-hero,
   .architecture-grid,
   .architecture-grid-three,
+  .simulator-provider-grid,
   .feature-matrix > div,
   .responsibility-table > div {
     grid-template-columns: 1fr;
@@ -3273,6 +3344,8 @@ button.quick-card {
   .provider-playbook-grid,
   .acceptance-grid,
   .architecture-mini-grid,
+  .simulator-provider-grid,
+  .simulator-actions,
   .architecture-action-list {
     grid-template-columns: 1fr;
   }

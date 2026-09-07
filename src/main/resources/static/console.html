@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudSight Collector Playground</title>
-  <link rel="stylesheet" href="./console.css?v=21">
+  <link rel="stylesheet" href="./console.css?v=22">
 </head>
 <body>
   <div class="playground-app">
@@ -30,13 +30,14 @@
         <a class="nav-item" href="#providers" data-nav-page="providers"><span class="nav-icon">06</span>Providers</a>
         <a class="nav-item" href="#api-explorer" data-nav-page="api-explorer"><span class="nav-icon">07</span>API Explorer</a>
         <a class="nav-item" href="#architecture" data-nav-page="architecture"><span class="nav-icon">08</span>Architecture</a>
+        <a class="nav-item" href="#simulator" data-nav-page="simulator"><span class="nav-icon">09</span>Simulator</a>
       </div>
 
       <div class="side-group">
         <div class="side-label">Utility Pages</div>
-        <a class="nav-item subtle" href="#docs" data-nav-page="docs"><span class="nav-icon">09</span>Docs</a>
-        <a class="nav-item subtle" href="#environment" data-nav-page="environment"><span class="nav-icon">10</span>Environment</a>
-        <a class="nav-item subtle" href="#help" data-nav-page="help"><span class="nav-icon">11</span>Help / Support</a>
+        <a class="nav-item subtle" href="#docs" data-nav-page="docs"><span class="nav-icon">10</span>Docs</a>
+        <a class="nav-item subtle" href="#environment" data-nav-page="environment"><span class="nav-icon">11</span>Environment</a>
+        <a class="nav-item subtle" href="#help" data-nav-page="help"><span class="nav-icon">12</span>Help / Support</a>
       </div>
 
       <div class="side-footer">
@@ -952,6 +953,86 @@
         </section>
       </section>
 
+      <section class="workspace-page" data-page="simulator" id="simulator">
+        <section class="utility-panel simulator-panel">
+          <div class="section-topline">
+            <div>
+              <div class="card-label">No-charge simulator</div>
+              <h2>Prove CloudSight without touching cloud providers</h2>
+              <p class="card-copy">
+                Pick a provider and replay a realistic saved event through the CloudSight collector path. This validates
+                ingestion, normalization, database write, dashboard readback, raw JSON, and audit trail without AWS,
+                GCP, Azure, OpenAI, or OCI API calls.
+              </p>
+            </div>
+            <button id="simulatorRunSelected" class="toolbar-button primary" type="button">Run no-charge proof</button>
+          </div>
+
+          <div class="architecture-scorecard simulator-scorecard">
+            <div><strong>0</strong><span>provider APIs called</span></div>
+            <div><strong>4</strong><span>supported providers</span></div>
+            <div><strong>1</strong><span>collector contract</span></div>
+            <div><strong>Full</strong><span>dashboard readback</span></div>
+          </div>
+
+          <div class="simulator-provider-grid" id="simulatorProviderGrid">
+            <button class="simulator-provider-card is-selected" type="button" data-simulator-provider="AWS">
+              <span class="provider-logo aws-logo">aws</span>
+              <strong>AWS billing event</strong>
+              <small>Cost Explorer / CUR-style S3, EC2, Lambda, and API Gateway telemetry.</small>
+            </button>
+            <button class="simulator-provider-card" type="button" data-simulator-provider="GCP">
+              <span class="provider-logo gcp-logo">G</span>
+              <strong>GCP billing export</strong>
+              <small>BigQuery billing export and Cloud Storage audit-style rows.</small>
+            </button>
+            <button class="simulator-provider-card" type="button" data-simulator-provider="AZURE">
+              <span class="provider-logo azure-logo">A</span>
+              <strong>Azure cost signal</strong>
+              <small>Cost Management export, Blob, Functions, SQL, and VM summary rows.</small>
+            </button>
+            <button class="simulator-provider-card" type="button" data-simulator-provider="OPENAI">
+              <span class="provider-logo openai-logo">AI</span>
+              <strong>OpenAI usage sync</strong>
+              <small>Usage and costs API-shaped metadata with no prompt or response content.</small>
+            </button>
+          </div>
+
+          <div class="architecture-grid simulator-grid">
+            <article class="architecture-card">
+              <h3>What runs</h3>
+              <ol class="architecture-steps">
+                <li>Build a saved provider-like event.</li>
+                <li>Send it to the CloudSight collector route.</li>
+                <li>Normalize provider, service, endpoint, units, tags, and cost.</li>
+                <li>Write one row into the CloudSight workspace.</li>
+                <li>Verify dashboard, usage, report, raw JSON, and audit readback.</li>
+              </ol>
+            </article>
+            <article class="architecture-card">
+              <h3>What never runs</h3>
+              <ul class="architecture-checklist">
+                <li>No S3 object creation</li>
+                <li>No GCS upload</li>
+                <li>No Azure Blob write</li>
+                <li>No OpenAI model call</li>
+                <li>No OCI provisioning</li>
+              </ul>
+            </article>
+          </div>
+
+          <pre id="simulatorOutput" class="architecture-code simulator-output">Choose a provider, then run a no-charge proof.</pre>
+
+          <div class="architecture-action-list simulator-actions">
+            <a href="#captured-rows" data-nav-page="captured-rows">Review captured rows</a>
+            <a href="#raw-json" data-nav-page="raw-json">Inspect raw JSON</a>
+            <a href="#audit-trail" data-nav-page="audit-trail">Trace audit trail</a>
+            <a href="#api-explorer" data-nav-page="api-explorer">Open API Explorer</a>
+            <a href="https://cloudsight.dargio.in/status" target="_blank" rel="noreferrer">Open product status</a>
+          </div>
+        </section>
+      </section>
+
       <section class="workspace-page" data-page="environment">
         <section class="utility-panel">
           <div class="section-topline">
@@ -1031,6 +1112,6 @@
     </main>
   </div>
 
-  <script src="./console.js?v=21" defer></script>
+  <script src="./console.js?v=22" defer></script>
 </body>
 </html>

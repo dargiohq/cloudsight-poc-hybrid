@@ -44,6 +44,9 @@ const capturedRangeFilter = document.getElementById("capturedRangeFilter");
 const capturedSearch = document.getElementById("capturedSearch");
 const applyCapturedFilters = document.getElementById("applyCapturedFilters");
 const exportCapturedRows = document.getElementById("exportCapturedRows");
+const simulatorProviderGrid = document.getElementById("simulatorProviderGrid");
+const simulatorRunSelected = document.getElementById("simulatorRunSelected");
+const simulatorOutput = document.getElementById("simulatorOutput");
 const pageSections = Array.from(document.querySelectorAll(".workspace-page"));
 const navPageLinks = Array.from(document.querySelectorAll("[data-nav-page]"));
 const IS_STATIC_PREVIEW =
@@ -91,6 +94,7 @@ const state = {
   },
   loadingScenarioId: null,
   runningAll: false,
+  simulatorProvider: "AWS",
   activePage: PAGE_IDS.has(pageFromHash()) ? pageFromHash() : "overview"
 };
 
@@ -398,6 +402,19 @@ if (apiExplorerPath) {
 if (rawJsonDownload) {
   rawJsonDownload.addEventListener("click", () => downloadRawJsonPayload());
 }
+if (simulatorProviderGrid) {
+  simulatorProviderGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-simulator-provider]");
+    if (!button) {
+      return;
+    }
+    state.simulatorProvider = button.dataset.simulatorProvider || "AWS";
+    renderSimulatorSelection();
+  });
+}
+if (simulatorRunSelected) {
+  simulatorRunSelected.addEventListener("click", () => runNoChargeSimulator());
+}
 
 async function json(url, options) {
   if (IS_STATIC_PREVIEW) {
@@ -418,6 +435,80 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function renderSimulatorSelection() {
+  if (!simulatorProviderGrid) {
+    return;
+  }
+  Array.from(simulatorProviderGrid.querySelectorAll("[data-simulator-provider]")).forEach((button) => {
+    button.classList.toggle("is-selected", button.dataset.simulatorProvider === state.simulatorProvider);
+  });
+}
+
+function simulatorScenarioFor(provider) {
+  const normalized = String(provider || "AWS").toUpperCase();
+  const preferred = {
+    AWS: ["aws-ec2", "aws-s3", "aws-api-gateway", "aws-s3-live"],
+    GCP: ["gcp-storage", "gcp-bigquery", "gcp-cloud-run", "gcp-storage-live"],
+    AZURE: ["azure-blob", "azure-vm", "azure-functions", "azure-blob-live"],
+    OPENAI: ["openai-usage"]
+  }[normalized] || [];
+  const all = state.models.flatMap((model) => [model.liveScenario, ...model.serviceScenarios].filter(Boolean));
+  return preferred.map((id) => all.find((scenario) => scenario.id === id)).find(Boolean)
+    || all.find((scenario) => scenario.provider === normalized && scenario.executionMode !== "live-provider-call")
+    || all.find((scenario) => scenario.provider === normalized)
+    || all[0];
+}
+
+async function runNoChargeSimulator() {
+  const scenario = simulatorScenarioFor(state.simulatorProvider);
+  if (!scenario || !simulatorOutput) {
+    return;
+  }
+
+  const previousProvider = state.selectedProvider;
+  const previousScenarioId = state.selectedScenarioId;
+  state.selectedProvider = scenario.provider;
+  state.selectedScenarioId = scenario.id;
+  simulatorRunSelected.disabled = true;
+  simulatorRunSelected.textContent = "Running proof...";
+  simulatorOutput.textContent = `Running ${scenario.provider} ${scenario.serviceFamily} replay through CloudSight only...`;
+
+  try {
+    const result = await json(`/demo/scenarios/${scenario.id}/run?verify=true`, { method: "POST" });
+    rememberRun(result, scenario);
+    await loadCapturedRows({ force: true });
+    await loadAudit();
+    renderOverviewResultPreview();
+    renderApiExplorer(result, scenario);
+    simulatorOutput.textContent = JSON.stringify({
+      noCharge: true,
+      providerApisCalled: 0,
+      scenario: {
+        id: scenario.id,
+        provider: scenario.provider,
+        serviceFamily: scenario.serviceFamily,
+        endpoint: scenario.primaryEndpoint
+      },
+      result: {
+        status: result.status || result.dispatch?.status || "UNKNOWN",
+        runId: result.runId,
+        stored: result.dispatch?.result?.response?.stored || result.verification?.matchedLogs?.length || 0,
+        verification: result.verification?.status || "UNKNOWN"
+      },
+      inspectNext: ["Captured Rows", "Raw JSON", "Audit Trail", "API Explorer", "Main app /status"]
+    }, null, 2);
+  } catch (error) {
+    state.selectedProvider = previousProvider;
+    state.selectedScenarioId = previousScenarioId;
+    simulatorOutput.textContent = error.stack || String(error);
+  } finally {
+    simulatorRunSelected.disabled = false;
+    simulatorRunSelected.textContent = "Run no-charge proof";
+    syncScenarioSurfaces({ resetBanner: false });
+    renderSimulatorSelection();
+  }
 }
 
 function formatCount(value) {
@@ -2214,6 +2305,7 @@ async function loadAll() {
   renderOverviewCards(overview);
   syncActivePage();
   renderProviderDirectory();
+  renderSimulatorSelection();
   syncScenarioSurfaces({ resetBanner: false });
   await loadAudit();
   renderOverviewResultPreview();
