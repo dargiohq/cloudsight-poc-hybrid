@@ -449,7 +449,7 @@ function renderSimulatorSelection() {
 function simulatorScenarioFor(provider) {
   const normalized = String(provider || "AWS").toUpperCase();
   const preferred = {
-    AWS: ["aws-ec2", "aws-s3", "aws-api-gateway", "aws-s3-live"],
+    AWS: ["aws-ec2-ebs", "aws-s3", "aws-api-gateway", "aws-s3-live"],
     GCP: ["gcp-storage", "gcp-bigquery", "gcp-cloud-run", "gcp-storage-live"],
     AZURE: ["azure-blob", "azure-vm", "azure-functions", "azure-blob-live"],
     OPENAI: ["openai-usage"]
